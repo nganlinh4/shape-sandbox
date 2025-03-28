@@ -19,6 +19,9 @@ class Renderer {
         this.materialDataTexture = null;
         this.environmentMap = null;
         
+        // Texture manager for handling material textures
+        this.textureManager = new TextureManager(p);
+        
         // Post-processing system
         this.postProcess = null;
         
@@ -62,6 +65,9 @@ class Renderer {
         
         // Initialize post-processing system
         this.postProcess = new PostProcessSystem(this.p);
+        
+        // Load default textures
+        this.loadDefaultTextures();
     }
     
     /**
@@ -75,12 +81,89 @@ class Renderer {
             CONFIG.shapes.maxCount
         );
         
-        // Create material data texture (4 rows per material)
+        // Create material data texture (5 rows per material to accommodate texture mapping parameters)
         this.materialDataTexture = new DataTexture(
             this.p._renderer,
-            4, // 4 pixels per material: [albedo+metallic, roughness+emissiveFactor+ior+flags, emissive+reserved, textureIndex+reserved]
+            5, // 5 pixels per material: [albedo+metallic, roughness+emissiveFactor+ior+flags, emissive+reserved, textureIndices, textureScale+Offset]
             32 // Support up to 32 materials
         );
+    }
+    
+    /**
+     * Load default textures used in the application
+     */
+    loadDefaultTextures() {
+        // Define array of default texture paths
+        const defaultTextures = [
+            'assets/textures/checker.png',
+            'assets/textures/noise.png',
+            'assets/textures/grid.png',
+            'assets/textures/scratched_metal.jpg',
+            'assets/textures/wood.jpg'
+        ];
+        
+        // Dynamic loading based on CONFIG if available
+        const configTextures = CONFIG.textures?.default || [];
+        
+        // Combine default textures with config textures
+        const allTextures = [...defaultTextures, ...configTextures];
+        
+        // Load all default textures
+        if (allTextures.length > 0) {
+            // Create assets/textures folder if it doesn't exist
+            this.ensureTextureFolder();
+            
+            // Load textures asynchronously (will fall back to default if loading fails)
+            this.textureManager.loadTextures(allTextures)
+                .then(indices => {
+                    console.log('Loaded default textures:', indices);
+                })
+                .catch(err => {
+                    console.warn('Error loading some textures:', err);
+                });
+        }
+    }
+    
+    /**
+     * Ensure the textures folder exists
+     */
+    ensureTextureFolder() {
+        try {
+            // Create textures folder if it doesn't exist
+            const texturesPath = 'assets/textures';
+            if (!this.p.createFileIsDirectory) { // Check if directory exists (p5.js Web Editor)
+                console.log('Skipping directory check in web environment');
+                return;
+            }
+            
+            if (!this.p.createFileIsDirectory(texturesPath)) {
+                console.log('Creating textures directory');
+                this.p.createFileDirectory(texturesPath);
+            }
+        } catch (e) {
+            console.warn('Directory check/creation not supported in this environment');
+        }
+    }
+    
+    /**
+     * Load a texture and assign it to a material
+     * @param {string} path - Path to texture file
+     * @param {number} materialId - ID of material to assign texture to
+     * @param {string} textureType - Type of texture: 'diffuse', 'normal', 'roughness', or 'metallic'
+     * @returns {Promise<number>} Promise resolving to the texture index
+     */
+    loadMaterialTexture(path, materialId, textureType = 'diffuse') {
+        return this.textureManager.loadTexture(path)
+            .then(textureIndex => {
+                const material = this.materialLibrary.getMaterial(materialId);
+                if (material) {
+                    material.setTexture(textureIndex, textureType);
+                    return textureIndex;
+                } else {
+                    console.warn(`Material with ID ${materialId} not found`);
+                    return -1;
+                }
+            });
     }
     
     /**
@@ -385,6 +468,9 @@ class Renderer {
             gl.bindTexture(gl.TEXTURE_CUBE_MAP, this.environmentTexture._tex);
             gl.uniform1i(uniformLocation, 2);
         }
+        
+        // Bind material textures (starting at texture unit 3)
+        this.textureManager.bindTextures(this.shader, 3);
         
         // Draw a full-screen quad to trigger the fragment shader
         if (renderTarget) {
