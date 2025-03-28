@@ -206,6 +206,44 @@ class PostProcessSystem {
             this.init();
         }
     }
+
+    /**
+     * Clean up resources when no longer needed
+     * Important to prevent memory leaks
+     */
+    cleanup() {
+        try {
+            // Clean up shaders and graphics buffers
+            if (this.mainBuffer) {
+                this.mainBuffer.remove();
+                this.mainBuffer = null;
+            }
+            
+            if (this.bloomBrightPass) {
+                this.bloomBrightPass.remove();
+                this.bloomBrightPass = null;
+            }
+            
+            if (this.bloomBlurH) {
+                this.bloomBlurH.remove();
+                this.bloomBlurH = null;
+            }
+            
+            if (this.bloomBlurV) {
+                this.bloomBlurV.remove();
+                this.bloomBlurV = null;
+            }
+            
+            // Shaders are managed by p5 and don't need explicit deletion
+            this.brightPassShader = null;
+            this.blurShader = null;
+            this.compositeShader = null;
+            
+            console.log("PostProcessSystem resources cleaned up");
+        } catch (e) {
+            console.warn("Error during PostProcessSystem cleanup:", e);
+        }
+    }
     
     // Shader source code
     

@@ -37,7 +37,22 @@ function initializeSystems(p) {
     physics = new PhysicsSystem(shapeManager);
     
     // Create renderer
-    renderer = new Renderer(p, shapeManager, materialLibrary);
+    try {
+        renderer = new Renderer(p, shapeManager, materialLibrary);
+    } catch (err) {
+        console.error("Failed to create Renderer:", err);
+        // Create fallback renderer to prevent errors
+        renderer = {
+            render: function() { 
+                console.warn("Using fallback renderer"); 
+                return false; 
+            },
+            handleWindowResize: function() {},
+            getFPS: function() { return 0; },
+            setPostProcessingParams: function() {},
+            loadDefaultTextures: function() {}
+        };
+    }
     
     // Create interaction handler
     interaction = new InteractionHandler(p, shapeManager, physics);
@@ -68,8 +83,17 @@ function initializeSystems(p) {
         };
     }
 
-    // Create UI manager
-    ui = new UIManager(p, shapeManager, materialLibrary, interaction, physics, audio, renderer);
+    // Create UI manager with robust error handling
+    try {
+        ui = new UIManager(p, shapeManager, materialLibrary, interaction, physics, audio, renderer);
+    } catch (err) {
+        console.warn("Failed to create UIManager:", err);
+        // Create a simple UI fallback
+        ui = {
+            update: function() {},
+            toggleUI: function() {}
+        };
+    }
     
     // Create initial scene
     createInitialScene(p);

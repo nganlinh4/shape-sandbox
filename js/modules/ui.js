@@ -51,11 +51,12 @@ class UIManager {
                     CONFIG.render.defaultBackground[2] * 255
                 ],
                 showFPS: CONFIG.ui.fps.show,
-                postProcess: CONFIG.render.postProcess,
-                bloomEnabled: CONFIG.render.bloomEnabled,
-                bloomThreshold: CONFIG.render.bloomThreshold,
-                bloomIntensity: CONFIG.render.bloomIntensity,
-                envMapEnabled: CONFIG.render.envMapEnabled,
+                // Fix: Use boolean for post-processing controls instead of the object
+                postProcessEnabled: CONFIG.render.postProcess.enabled,
+                bloomEnabled: CONFIG.render.postProcess.bloom,
+                bloomThreshold: CONFIG.render.postProcess.bloomThreshold,
+                bloomIntensity: CONFIG.render.postProcess.bloomIntensity,
+                envMapEnabled: CONFIG.render.envMapIntensity > 0,
                 envMapIntensity: CONFIG.render.envMapIntensity,
                 reflectionQuality: CONFIG.render.reflectionQuality
             },
@@ -356,15 +357,19 @@ class UIManager {
     setupRenderingControls(tab) {
         // Post-processing section
         tab.addSeparator();
-        tab.addInput(this.params.render, 'postProcess', {
+        
+        // Fix postProcess control - use boolean type explicitly
+        tab.addInput(this.params.render, 'postProcessEnabled', {
             label: 'Post-Processing'
         }).on('change', (ev) => {
-            this.renderer.setPostProcessingParams(
-                ev.value,
-                this.params.render.bloomEnabled,
-                this.params.render.bloomThreshold,
-                this.params.render.bloomIntensity
-            );
+            if (this.renderer && typeof this.renderer.setPostProcessingParams === 'function') {
+                this.renderer.setPostProcessingParams(
+                    ev.value,
+                    this.params.render.bloomEnabled,
+                    this.params.render.bloomThreshold,
+                    this.params.render.bloomIntensity
+                );
+            }
         });
         
         // Bloom controls folder
@@ -373,12 +378,14 @@ class UIManager {
         bloomFolder.addInput(this.params.render, 'bloomEnabled', {
             label: 'Enabled'
         }).on('change', (ev) => {
-            this.renderer.setPostProcessingParams(
-                this.params.render.postProcess,
-                ev.value,
-                this.params.render.bloomThreshold,
-                this.params.render.bloomIntensity
-            );
+            if (this.renderer && typeof this.renderer.setPostProcessingParams === 'function') {
+                this.renderer.setPostProcessingParams(
+                    this.params.render.postProcessEnabled,
+                    ev.value,
+                    this.params.render.bloomThreshold,
+                    this.params.render.bloomIntensity
+                );
+            }
         });
         
         bloomFolder.addInput(this.params.render, 'bloomThreshold', {
@@ -387,12 +394,14 @@ class UIManager {
             max: 1.0,
             step: 0.05
         }).on('change', (ev) => {
-            this.renderer.setPostProcessingParams(
-                this.params.render.postProcess,
-                this.params.render.bloomEnabled,
-                ev.value,
-                this.params.render.bloomIntensity
-            );
+            if (this.renderer && typeof this.renderer.setPostProcessingParams === 'function') {
+                this.renderer.setPostProcessingParams(
+                    this.params.render.postProcessEnabled,
+                    this.params.render.bloomEnabled,
+                    ev.value,
+                    this.params.render.bloomIntensity
+                );
+            }
         });
         
         bloomFolder.addInput(this.params.render, 'bloomIntensity', {
@@ -401,12 +410,14 @@ class UIManager {
             max: 2.0,
             step: 0.05
         }).on('change', (ev) => {
-            this.renderer.setPostProcessingParams(
-                this.params.render.postProcess,
-                this.params.render.bloomEnabled,
-                this.params.render.bloomThreshold,
-                ev.value
-            );
+            if (this.renderer && typeof this.renderer.setPostProcessingParams === 'function') {
+                this.renderer.setPostProcessingParams(
+                    this.params.render.postProcessEnabled,
+                    this.params.render.bloomEnabled,
+                    this.params.render.bloomThreshold,
+                    ev.value
+                );
+            }
         });
         
         // Environment mapping controls
@@ -455,17 +466,26 @@ class UIManager {
             CONFIG.render.shadowSoftness = ev.value;
         });
         
-        // Background color
-        tab.addInput(this.params.render, 'background', {
-            label: 'Background',
-            color: {type: 'rgb', format: 'rgb'}
-        }).on('change', (ev) => {
-            // Update in renderer
-            CONFIG.render.defaultBackground = [
-                ev.value[0] / 255,
-                ev.value[1] / 255,
-                ev.value[2] / 255
-            ];
+        // FIX: Background color control using RGB object instead of array
+        // First convert array to RGB object for TweakPane
+        const bgColorObj = {
+            r: this.params.render.background[0], 
+            g: this.params.render.background[1], 
+            b: this.params.render.background[2]
+        };
+        
+        // Create a binding for the color object
+        tab.addBinding(bgColorObj, { label: 'Background' })
+            .on('change', (ev) => {
+                // Update the params array from the color object
+                this.params.render.background = [ev.value.r, ev.value.g, ev.value.b];
+                
+                // Update the config background (scale down to 0-1)
+                CONFIG.render.defaultBackground = [
+                    ev.value.r / 255, 
+                    ev.value.g / 255, 
+                    ev.value.b / 255
+                ];
         });
         
         // Light settings
