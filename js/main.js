@@ -19,84 +19,89 @@ let defaultFont; // Global font variable
  * @param {p5} p - The p5 instance
  */
 function initializeSystems(p) {
-    // Create material library
-    materialLibrary = new MaterialLibrary();
-    
-    // Ensure the getAllMaterials method is available
-    if (materialLibrary && !materialLibrary.getAllMaterials) {
-        console.log("Adding missing getAllMaterials method to materialLibrary instance");
-        materialLibrary.getAllMaterials = function() {
-            return this.materials ? [...this.materials] : [];
-        };
-    }
-    
-    // Create shape manager
-    shapeManager = new ShapeManager();
-    
-    // Create physics system
-    physics = new PhysicsSystem(shapeManager);
-    
-    // Create renderer
     try {
-        renderer = new Renderer(p, shapeManager, materialLibrary);
-    } catch (err) {
-        console.error("Failed to create Renderer:", err);
-        // Create fallback renderer to prevent errors
-        renderer = {
-            render: function() { 
-                console.warn("Using fallback renderer"); 
-                return false; 
-            },
-            handleWindowResize: function() {},
-            getFPS: function() { return 0; },
-            setPostProcessingParams: function() {},
-            loadDefaultTextures: function() {}
-        };
-    }
-    
-    // Create interaction handler
-    interaction = new InteractionHandler(p, shapeManager, physics);
-    
-    // Create audio system with safe initialization
-    try {
-        audio = new AudioSystem(p, shapeManager, materialLibrary, physics);
+        // Create material library
+        materialLibrary = new MaterialLibrary();
         
-        // Attempt to initialize audio context - might be suspended until user interaction
-        if (typeof audio.init === 'function') {
-            audio.init();
+        // Ensure the getAllMaterials method is available
+        if (materialLibrary && !materialLibrary.getAllMaterials) {
+            console.log("Adding missing getAllMaterials method to materialLibrary instance");
+            materialLibrary.getAllMaterials = function() {
+                return this.materials ? [...this.materials] : [];
+            };
         }
-    } catch (err) {
-        console.warn("Failed to create AudioSystem:", err);
-        // Create a fallback/dummy audio system that won't break when methods are called
-        audio = {
-            isEnabled: false,
-            isInitialized: false,
-            init: function() { this.isInitialized = true; },
-            update: function() {},
-            playSound: function() {},
-            setEnabled: function() {},
-            stopAmbient: function() {},
-            playAmbient: function() {},
-            createPlaceholderSounds: function() {
-                console.warn("Using synthesized sounds as fallback.");
+        
+        // Create shape manager
+        shapeManager = new ShapeManager();
+        
+        // Create physics system
+        physics = new PhysicsSystem(shapeManager);
+        
+        // Create renderer
+        try {
+            renderer = new Renderer(p, shapeManager, materialLibrary);
+        } catch (err) {
+            console.error("Failed to create Renderer:", err);
+            // Create fallback renderer to prevent errors
+            renderer = {
+                render: function() { 
+                    console.warn("Using fallback renderer"); 
+                    return false; 
+                },
+                handleWindowResize: function() {},
+                getFPS: function() { return 0; },
+                setPostProcessingParams: function() {},
+                loadDefaultTextures: function() {}
+            };
+        }
+        
+        // Create interaction handler
+        interaction = new InteractionHandler(p, shapeManager, physics);
+        
+        // Create audio system with safe initialization
+        try {
+            audio = new AudioSystem(p, shapeManager, materialLibrary, physics);
+            
+            // Attempt to initialize audio context - might be suspended until user interaction
+            if (typeof audio.init === 'function') {
+                audio.init();
             }
-        };
-    }
+        } catch (err) {
+            console.warn("Failed to create AudioSystem:", err);
+            // Create a fallback/dummy audio system that won't break when methods are called
+            audio = {
+                isEnabled: false,
+                isInitialized: false,
+                init: function() { this.isInitialized = true; },
+                update: function() {},
+                playSound: function() {},
+                setEnabled: function() {},
+                stopAmbient: function() {},
+                playAmbient: function() {},
+                createPlaceholderSounds: function() {
+                    console.warn("Using synthesized sounds as fallback.");
+                }
+            };
+        }
 
-    // Create UI manager with robust error handling
-    try {
-        ui = new UIManager(p, shapeManager, materialLibrary, interaction, physics, audio, renderer);
+        // Create UI manager with robust error handling
+        try {
+            ui = new UIManager(p, shapeManager, materialLibrary, interaction, physics, audio, renderer);
+            console.log("UI created successfully");
+        } catch (err) {
+            console.error("Failed to create UIManager:", err);
+            // Create a simple UI fallback
+            ui = {
+                update: function() {},
+                toggleUI: function() {}
+            };
+        }
+        
+        // Create initial scene
+        createInitialScene(p);
     } catch (err) {
-        console.warn("Failed to create UIManager:", err);
-        // Create a simple UI fallback
-        ui = {
-            update: function() {},
-            toggleUI: function() {}
-        };
+        console.error("Error initializing systems:", err);
     }
-    
-    // Create initial scene
-    createInitialScene(p);
 }
 
 /**

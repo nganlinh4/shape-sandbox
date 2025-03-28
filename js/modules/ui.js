@@ -45,13 +45,11 @@ class UIManager {
             render: {
                 shadows: true,
                 shadowSoftness: CONFIG.render.shadowSoftness,
-                background: [
-                    CONFIG.render.defaultBackground[0] * 255,
-                    CONFIG.render.defaultBackground[1] * 255,
-                    CONFIG.render.defaultBackground[2] * 255
-                ],
+                // Fix: Replace array with separate RGB values
+                backgroundR: Math.round(CONFIG.render.defaultBackground[0] * 255),
+                backgroundG: Math.round(CONFIG.render.defaultBackground[1] * 255),
+                backgroundB: Math.round(CONFIG.render.defaultBackground[2] * 255),
                 showFPS: CONFIG.ui.fps.show,
-                // Fix: Use boolean for post-processing controls instead of the object
                 postProcessEnabled: CONFIG.render.postProcess.enabled,
                 bloomEnabled: CONFIG.render.postProcess.bloom,
                 bloomThreshold: CONFIG.render.postProcess.bloomThreshold,
@@ -64,11 +62,10 @@ class UIManager {
             // Lighting
             lighting: {
                 intensity: CONFIG.lights.directional.intensity,
-                color: [
-                    CONFIG.lights.directional.color[0] * 255,
-                    CONFIG.lights.directional.color[1] * 255,
-                    CONFIG.lights.directional.color[2] * 255
-                ],
+                // Fix: Replace array with separate RGB values
+                colorR: Math.round(CONFIG.lights.directional.color[0] * 255),
+                colorG: Math.round(CONFIG.lights.directional.color[1] * 255),
+                colorB: Math.round(CONFIG.lights.directional.color[2] * 255),
                 ambient: CONFIG.lights.ambient.intensity
             },
             
@@ -466,26 +463,33 @@ class UIManager {
             CONFIG.render.shadowSoftness = ev.value;
         });
         
-        // FIX: Background color control using RGB object instead of array
-        // First convert array to RGB object for TweakPane
-        const bgColorObj = {
-            r: this.params.render.background[0], 
-            g: this.params.render.background[1], 
-            b: this.params.render.background[2]
-        };
+        // Create individual color components controls for background
+        tab.addSeparator();
+        tab.addInput(this.params.render, 'backgroundR', {
+            label: 'Background Red',
+            min: 0,
+            max: 255,
+            step: 1
+        }).on('change', (ev) => {
+            CONFIG.render.defaultBackground[0] = ev.value / 255;
+        });
         
-        // Create a binding for the color object
-        tab.addBinding(bgColorObj, { label: 'Background' })
-            .on('change', (ev) => {
-                // Update the params array from the color object
-                this.params.render.background = [ev.value.r, ev.value.g, ev.value.b];
-                
-                // Update the config background (scale down to 0-1)
-                CONFIG.render.defaultBackground = [
-                    ev.value.r / 255, 
-                    ev.value.g / 255, 
-                    ev.value.b / 255
-                ];
+        tab.addInput(this.params.render, 'backgroundG', {
+            label: 'Background Green',
+            min: 0,
+            max: 255,
+            step: 1
+        }).on('change', (ev) => {
+            CONFIG.render.defaultBackground[1] = ev.value / 255;
+        });
+        
+        tab.addInput(this.params.render, 'backgroundB', {
+            label: 'Background Blue',
+            min: 0,
+            max: 255,
+            step: 1
+        }).on('change', (ev) => {
+            CONFIG.render.defaultBackground[2] = ev.value / 255;
         });
         
         // Light settings
@@ -499,16 +503,32 @@ class UIManager {
             this.renderer.lightIntensity = ev.value;
         });
         
-        // Light color
-        tab.addInput(this.params.lighting, 'color', {
-            label: 'Light Color',
-            color: {type: 'rgb', format: 'rgb'}
+        // Create individual color components for light color
+        tab.addInput(this.params.lighting, 'colorR', {
+            label: 'Light Color Red',
+            min: 0,
+            max: 255,
+            step: 1
         }).on('change', (ev) => {
-            this.renderer.lightColor = [
-                ev.value[0] / 255,
-                ev.value[1] / 255,
-                ev.value[2] / 255
-            ];
+            this.renderer.lightColor[0] = ev.value / 255;
+        });
+        
+        tab.addInput(this.params.lighting, 'colorG', {
+            label: 'Light Color Green',
+            min: 0,
+            max: 255,
+            step: 1
+        }).on('change', (ev) => {
+            this.renderer.lightColor[1] = ev.value / 255;
+        });
+        
+        tab.addInput(this.params.lighting, 'colorB', {
+            label: 'Light Color Blue',
+            min: 0,
+            max: 255,
+            step: 1
+        }).on('change', (ev) => {
+            this.renderer.lightColor[2] = ev.value / 255;
         });
         
         // Ambient light
