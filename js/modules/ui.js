@@ -152,15 +152,18 @@ class UIManager {
         // Material dropdown
         const materialOptions = {};
         
-        // Access materials directly from the materials array instead of using getAllMaterials
-        if (this.materialLibrary && Array.isArray(this.materialLibrary.materials)) {
-            this.materialLibrary.materials.forEach(material => {
+        // FIXED: Direct material access without using getAllMaterials
+        if (this.materialLibrary && this.materialLibrary.materials) {
+            // Use direct array access instead of the problematic getAllMaterials method
+            const materials = this.materialLibrary.materials;
+            for (let i = 0; i < materials.length; i++) {
+                const material = materials[i];
                 if (material && material.name) {
                     materialOptions[material.name] = material.id;
                 }
-            });
+            }
         } else {
-            // Fallback options if materials array is not accessible
+            // Fallback material options
             materialOptions["Default"] = 0;
             materialOptions["Metal"] = 1;
             materialOptions["Glass"] = 2;

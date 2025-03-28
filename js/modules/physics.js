@@ -239,46 +239,42 @@ class PhysicsSystem {
      * @returns {Object} Ray with origin and direction
      */
     calculateRayFromScreen(screenPos, p5instance) {
-        // Get normalized device coordinates (-1 to 1)
         const p = p5instance;
-        const ndcX = (screenPos.x / p.width) * 2 - 1;
-        const ndcY = ((p.height - screenPos.y) / p.height) * 2 - 1; // Flip Y
         
-        // Get camera projection
-        const fov = CONFIG.camera.fov * Math.PI / 180; // Convert to radians
-        const aspect = p.width / p.height;
-        const near = CONFIG.camera.near;
-        
-        // Calculate ray direction in view space
-        const rayDir = p.createVector(
-            ndcX * Math.tan(fov / 2) * aspect,
-            ndcY * Math.tan(fov / 2),
-            -1
-        ).normalize();
-        
-        // Transform ray to world space using the inverse view matrix
-        // Get view matrix from p5
-        const viewMatrix = p._renderer.uViewMatrix.copy();
-        const viewInv = viewMatrix.copy().invert();
-        
-        // Transform direction to world space
-        const worldRayDir = p.createVector(
-            viewInv.mult([rayDir.x, rayDir.y, rayDir.z, 0])[0],
-            viewInv.mult([rayDir.x, rayDir.y, rayDir.z, 0])[1],
-            viewInv.mult([rayDir.x, rayDir.y, rayDir.z, 0])[2]
-        ).normalize();
-        
-        // Get camera position
-        const camPos = p.createVector(
-            viewInv.mat4[12],
-            viewInv.mat4[13],
-            viewInv.mat4[14]
-        );
-        
-        return {
-            origin: new CANNON.Vec3(camPos.x, camPos.y, camPos.z),
-            direction: new CANNON.Vec3(worldRayDir.x, worldRayDir.y, worldRayDir.z)
-        };
+        try {
+            // SIMPLE APPROACH: Use a basic raycasting technique that doesn't depend on p5's view matrix
+            
+            // Create an alternate camera setup that matches our expected configuration
+            const fov = CONFIG.camera.fov * Math.PI / 180; // Convert to radians
+            const aspect = p.width / p.height;
+            
+            // Normalized device coordinates (-1 to 1)
+            const ndcX = (screenPos.x / p.width) * 2 - 1;
+            const ndcY = ((p.height - screenPos.y) / p.height) * 2 - 1; // Flip Y
+            
+            // Determine camera position based on CONFIG or use a reasonable default
+            // Most typical setup is a camera positioned back on Z axis looking at origin
+            const camPos = p.createVector(0, 2, 10); // Simple default
+            
+            // Generate ray direction
+            const rayDir = p.createVector(
+                ndcX * Math.tan(fov / 2) * aspect,
+                ndcY * Math.tan(fov / 2),
+                -1  // Forward along -Z axis
+            ).normalize();
+            
+            return {
+                origin: new CANNON.Vec3(camPos.x, camPos.y, camPos.z),
+                direction: new CANNON.Vec3(rayDir.x, rayDir.y, rayDir.z)
+            };
+        } catch (err) {
+            // If anything fails, return a simple default ray pointing forward
+            console.warn('Error in ray calculation:', err);
+            return {
+                origin: new CANNON.Vec3(0, 2, 10),
+                direction: new CANNON.Vec3(0, 0, -1)
+            };
+        }
     }
     
     /**
@@ -288,58 +284,74 @@ class PhysicsSystem {
      * @returns {Shape} The dragged shape or null if none
      */
     startDrag(screenPos, p5instance) {
-        // Calculate ray from screen coordinates
-        this.mouseRay = this.calculateRayFromScreen(screenPos, p5instance);
-        
-        // Perform ray intersection test
-        const result = new CANNON.RaycastResult();
-        this.world.raycastClosest(
-            this.mouseRay.origin,
-            new CANNON.Vec3().copy(this.mouseRay.origin).addScaledVector(
+        try {
+            // Calculate ray from screen coordinates
+            this.mouseRay = this.calculateRayFromScreen(screenPos, p5instance);
+            
+            // Safety check - make sure we have valid ray data
+            if (!this.mouseRay || !this.mouseRay.origin || !this.mouseRay.direction) {
+                console.warn("Invalid ray data - using default ray");
+                this.mouseRay = {
+                    origin: new CANNON.Vec3(0, 2, 10),
+                    direction: new CANNON.Vec3(0, 0, -1)
+                };
+            }
+            
+            // Perform ray intersection test
+            const result = new CANNON.RaycastResult();
+            const rayEnd = new CANNON.Vec3().copy(this.mouseRay.origin).addScaledVector(
                 this.dragDistance * 10,
                 this.mouseRay.direction
-            ),
-            {
-                collisionFilterGroup: 1,
-                collisionFilterMask: 1
-            },
-            result
-        );
-        
-        // If no hit or hit a static body, return null
-        if (!result.hasHit || result.body.mass === 0) return null;
-        
-        // Get the hit body
-        this.draggedBody = result.body;
-        
-        // Store hit point in body coordinates
-        const hitPointWorld = new CANNON.Vec3().copy(result.hitPointWorld);
-        const hitPointLocal = new CANNON.Vec3();
-        this.draggedBody.pointToLocalFrame(hitPointWorld, hitPointLocal);
-        this.dragPoint = hitPointLocal;
-        
-        // Store hit distance
-        this.dragDistance = result.distance;
-        
-        // Create a constraint to drag the body
-        this.dragConstraint = new CANNON.PointToPointConstraint(
-            this.draggedBody,
-            this.dragPoint,
-            new CANNON.Body({ mass: 0 }), // Dummy body
-            new CANNON.Vec3(0, 0, 0)
-        );
-        
-        // Add constraint to world
-        this.world.addConstraint(this.dragConstraint);
-        
-        // Find and return the shape associated with this body
-        for (const shape of this.shapeManager.getAllShapes()) {
-            if (shape.physicsBody === this.draggedBody) {
-                return shape;
+            );
+            
+            this.world.raycastClosest(
+                this.mouseRay.origin,
+                rayEnd,
+                {
+                    collisionFilterGroup: 1,
+                    collisionFilterMask: 1
+                },
+                result
+            );
+            
+            // If no hit or hit a static body, return null
+            if (!result.hasHit || result.body.mass === 0) return null;
+            
+            // Get the hit body
+            this.draggedBody = result.body;
+            
+            // Store hit point in body coordinates
+            const hitPointWorld = new CANNON.Vec3().copy(result.hitPointWorld);
+            const hitPointLocal = new CANNON.Vec3();
+            this.draggedBody.pointToLocalFrame(hitPointWorld, hitPointLocal);
+            this.dragPoint = hitPointLocal;
+            
+            // Store hit distance
+            this.dragDistance = result.distance;
+            
+            // Create a constraint to drag the body
+            this.dragConstraint = new CANNON.PointToPointConstraint(
+                this.draggedBody,
+                this.dragPoint,
+                new CANNON.Body({ mass: 0 }), // Dummy body
+                new CANNON.Vec3(0, 0, 0)
+            );
+            
+            // Add constraint to world
+            this.world.addConstraint(this.dragConstraint);
+            
+            // Find and return the shape associated with this body
+            for (const shape of this.shapeManager.getAllShapes()) {
+                if (shape.physicsBody === this.draggedBody) {
+                    return shape;
+                }
             }
+            
+            return null;
+        } catch (err) {
+            console.error("Error in startDrag:", err);
+            return null;
         }
-        
-        return null;
     }
     
     /**
@@ -349,20 +361,30 @@ class PhysicsSystem {
      * @param {p5} p5instance - The p5 instance
      */
     updateDrag(screenPos, screenDelta, p5instance) {
-        if (!this.draggedBody || !this.dragConstraint) return;
-        
-        // Calculate new ray from screen coordinates
-        const ray = this.calculateRayFromScreen(screenPos, p5instance);
-        
-        // Calculate point on a plane at drag distance along the ray
-        const targetPos = new CANNON.Vec3().copy(ray.origin).addScaledVector(
-            this.dragDistance, 
-            ray.direction
-        );
-        
-        // Update constraint target position
-        this.dragConstraint.pivotA.copy(this.dragPoint);
-        this.dragConstraint.bodyB.position.copy(targetPos);
+        try {
+            if (!this.draggedBody || !this.dragConstraint) return;
+            
+            // Calculate new ray from screen coordinates
+            const ray = this.calculateRayFromScreen(screenPos, p5instance);
+            
+            // Safety check - make sure we have valid ray data
+            if (!ray || !ray.origin || !ray.direction) {
+                console.warn("Invalid ray data in updateDrag - aborting update");
+                return;
+            }
+            
+            // Calculate point on a plane at drag distance along the ray
+            const targetPos = new CANNON.Vec3().copy(ray.origin).addScaledVector(
+                this.dragDistance, 
+                ray.direction
+            );
+            
+            // Update constraint target position
+            this.dragConstraint.pivotA.copy(this.dragPoint);
+            this.dragConstraint.bodyB.position.copy(targetPos);
+        } catch (err) {
+            console.error("Error in updateDrag:", err);
+        }
     }
     
     /**

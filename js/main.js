@@ -21,7 +21,7 @@ function initializeSystems(p) {
     // Create material library
     materialLibrary = new MaterialLibrary();
     
-    // Ensure the materialLibrary has the getAllMaterials method
+    // Ensure the getAllMaterials method is available
     if (materialLibrary && !materialLibrary.getAllMaterials) {
         console.log("Adding missing getAllMaterials method to materialLibrary instance");
         materialLibrary.getAllMaterials = function() {
@@ -306,6 +306,30 @@ function ensureMaterialLibraryFunctions() {
 ensureMaterialLibraryFunctions();
 // Also call after a delay to ensure it runs after all scripts are loaded
 setTimeout(ensureMaterialLibraryFunctions, 500);
+
+// Emergency patch for MaterialLibrary missing method
+(function() {
+    // Give the browser a moment to load all scripts
+    setTimeout(function() {
+        console.log("Applying emergency patch for MaterialLibrary");
+        
+        // Fix at the prototype level
+        if (window.MaterialLibrary && !MaterialLibrary.prototype.getAllMaterials) {
+            console.log("Adding getAllMaterials method to MaterialLibrary prototype");
+            MaterialLibrary.prototype.getAllMaterials = function() {
+                return this.materials ? [...this.materials] : [];
+            };
+        }
+        
+        // Also fix the global materialLibrary instance if available
+        if (window.materialLibrary) {
+            console.log("Adding getAllMaterials method to materialLibrary instance");
+            materialLibrary.getAllMaterials = function() {
+                return this.materials ? [...this.materials] : [];
+            };
+        }
+    }, 0);
+})();
 
 // Start p5.js in instance mode, attaching to the 'sketch-holder' div
 const app = new p5(sketch, 'sketch-holder');
