@@ -21,6 +21,14 @@ function initializeSystems(p) {
     // Create material library
     materialLibrary = new MaterialLibrary();
     
+    // Ensure the materialLibrary has the getAllMaterials method
+    if (materialLibrary && !materialLibrary.getAllMaterials) {
+        console.log("Adding missing getAllMaterials method to materialLibrary instance");
+        materialLibrary.getAllMaterials = function() {
+            return this.materials ? [...this.materials] : [];
+        };
+    }
+    
     // Create shape manager
     shapeManager = new ShapeManager();
     
@@ -273,6 +281,31 @@ const sketch = (p) => {
     };
 
 }; // End of sketch function wrapper
+
+// Fix for MaterialLibrary.getAllMaterials not found error
+function ensureMaterialLibraryFunctions() {
+    // Wait for MaterialLibrary to be defined
+    if (typeof MaterialLibrary !== 'undefined') {
+        // Check if getAllMaterials function is missing and add it if needed
+        if (!MaterialLibrary.prototype.getAllMaterials) {
+            console.log("Adding missing getAllMaterials function to MaterialLibrary prototype");
+            MaterialLibrary.prototype.getAllMaterials = function() {
+                // Return a copy of the materials array
+                return this.materials ? [...this.materials] : [];
+            };
+        }
+        console.log("MaterialLibrary functions check complete");
+    } else {
+        // Try again in a moment
+        console.warn("MaterialLibrary not defined yet, retrying...");
+        setTimeout(ensureMaterialLibraryFunctions, 100);
+    }
+}
+
+// Call immediately
+ensureMaterialLibraryFunctions();
+// Also call after a delay to ensure it runs after all scripts are loaded
+setTimeout(ensureMaterialLibraryFunctions, 500);
 
 // Start p5.js in instance mode, attaching to the 'sketch-holder' div
 const app = new p5(sketch, 'sketch-holder');

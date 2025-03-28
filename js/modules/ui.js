@@ -152,51 +152,20 @@ class UIManager {
         // Material dropdown
         const materialOptions = {};
         
-        // Get materials from library safely
-        const materials = [];
-        try {
-            // First, try using the getAllMaterials method if available
-            if (this.materialLibrary && typeof this.materialLibrary.getAllMaterials === 'function') {
-                materials.push(...this.materialLibrary.getAllMaterials());
-            }
-            // If that doesn't work, try accessing the materials array directly
-            else if (this.materialLibrary && Array.isArray(this.materialLibrary.materials)) {
-                materials.push(...this.materialLibrary.materials);
-            }
-            // If we still don't have materials, create fallbacks
-            else {
-                console.warn("Could not access materials from materialLibrary - using defaults");
-                
-                // Define default materials based on CONFIG presets
-                if (CONFIG.materials) {
-                    let id = 0;
-                    for (const key in CONFIG.materials) {
-                        materials.push({
-                            id: id,
-                            name: key.charAt(0).toUpperCase() + key.slice(1),
-                            soundType: key
-                        });
-                        id++;
-                    }
+        // Access materials directly from the materials array instead of using getAllMaterials
+        if (this.materialLibrary && Array.isArray(this.materialLibrary.materials)) {
+            this.materialLibrary.materials.forEach(material => {
+                if (material && material.name) {
+                    materialOptions[material.name] = material.id;
                 }
-            }
-        } catch (e) {
-            console.error("Error getting materials:", e);
-        }
-        
-        // Create material options from available materials
-        materials.forEach(material => {
-            if (material && material.name) {
-                materialOptions[material.name] = material.id;
-            }
-        });
-        
-        // Ensure we have at least some options
-        if (Object.keys(materialOptions).length === 0) {
+            });
+        } else {
+            // Fallback options if materials array is not accessible
             materialOptions["Default"] = 0;
             materialOptions["Metal"] = 1;
             materialOptions["Glass"] = 2;
             materialOptions["Wood"] = 3;
+            materialOptions["Emissive"] = 4;
         }
         
         tab.addInput(this.params.shape, 'material', {
