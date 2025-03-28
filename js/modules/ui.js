@@ -128,6 +128,9 @@ class UIManager {
      * @param {TweakpaneTab} tab - The tab to add controls to
      */
     setupShapeControls(tab) {
+        // Store 'this' reference for use in closures
+        const self = this;
+        
         // Shape type dropdown
         tab.addInput(this.params.shape, 'type', {
             label: 'Type',
@@ -180,18 +183,45 @@ class UIManager {
         tab.addButton({
             title: 'Add Shape',
             label: 'Create'
-        }).on('click', () => {
-            // Create shape at a random position above the ground
-            const x = (Math.random() - 0.5) * 10;
-            const y = 5 + Math.random() * 5;
-            const z = (Math.random() - 0.5) * 10;
-            
-            this.interaction.spawnShape(
-                this.params.shape.type,
-                this.p.createVector(x, y, z),
-                this.params.shape.size,
-                this.params.shape.material
-            );
+        }).on('click', function() {
+            try {
+                // Create shape at a random position above the ground
+                const x = (Math.random() - 0.5) * 10;
+                const y = 5 + Math.random() * 5;
+                const z = (Math.random() - 0.5) * 10;
+                
+                console.log("Creating shape at position:", x, y, z);
+                
+                // Create a simple position object with ONLY the properties needed
+                // Completely avoid any p5.Vector approach
+                const position = {
+                    x: x,
+                    y: y,
+                    z: z,
+                    // Add copy method that all code expects
+                    copy: function() { 
+                        return { 
+                            x: this.x, 
+                            y: this.y, 
+                            z: this.z,
+                            copy: this.copy 
+                        };
+                    }
+                };
+                
+                console.log("Using position object:", position);
+                
+                // Call interaction handler to create shape
+                self.interaction.spawnShape(
+                    self.params.shape.type,
+                    position,
+                    self.params.shape.size,
+                    self.params.shape.material
+                );
+                console.log("Shape spawned successfully");
+            } catch (err) {
+                console.error("Error creating shape:", err, err.stack);
+            }
         });
         
         // Clear all button
@@ -199,20 +229,45 @@ class UIManager {
             title: 'Clear All Shapes',
             label: 'Clear'
         }).on('click', () => {
-            // Remove all shapes from the scene
-            for (const shape of [...this.shapeManager.getAllShapes()]) {
-                this.physics.removeShape(shape);
-                this.shapeManager.removeShape(shape.id);
+            try {
+                // Use a simple direct approach to clear shapes
+                console.log("Clearing all shapes");
+                
+                if (self.shapeManager && typeof self.shapeManager.clearShapes === 'function') {
+                    // Use built-in clear method if available
+                    self.shapeManager.clearShapes();
+                } else if (self.shapeManager && Array.isArray(self.shapeManager.shapes)) {
+                    // Manually clear shapes if needed
+                    const shapes = [...self.shapeManager.shapes];
+                    for (let i = 0; i < shapes.length; i++) {
+                        const shape = shapes[i];
+                        if (shape && shape.id !== undefined) {
+                            if (self.physics) self.physics.removeShape(shape);
+                            self.shapeManager.removeShape(shape.id);
+                        }
+                    }
+                } else {
+                    console.warn("ShapeManager doesn't have expected methods or properties");
+                }
+            } catch (err) {
+                console.error("Error clearing shapes:", err);
             }
         });
         
         // Add help text
         tab.addSeparator();
-        tab.addMonitor({}, 'help', {
+        
+        // Help text parameter on the UI params object
+        if (!this.params.helpText) {
+            this.params.helpText = 'Click+drag to move objects\nDelete key to remove selected';
+        }
+        
+        // Add the text using a proper parameter binding
+        tab.addInput(this.params, 'helpText', {
             label: 'Controls',
             multiline: true,
-            lineCount: 2,
-            value: () => 'Click+drag to move objects\nDelete key to remove selected'
+            readonly: true,
+            rows: 2
         });
     }
     

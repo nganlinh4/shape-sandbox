@@ -68,7 +68,7 @@ function initializeSystems(p) {
     }
 
     // Create UI manager
-    ui = new UIManager(window, p, shapeManager, materialLibrary, interaction, physics, audio, renderer);
+    ui = new UIManager(p, shapeManager, materialLibrary, interaction, physics, audio, renderer);
     
     // Create initial scene
     createInitialScene(p);
@@ -142,41 +142,89 @@ function createAssetsFolders() {
 // p5.js instance mode wrapper
 const sketch = (p) => {
 
+    // Add WebGL debug info
+    function checkWebGLSupport() {
+        console.log("Checking WebGL support...");
+        try {
+            // Try to get WebGL context
+            const canvas = document.createElement('canvas');
+            const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+            
+            if (!gl) {
+                console.error("WebGL not supported. Your browser or machine may not support it.");
+                return false;
+            }
+            
+            console.log("WebGL is supported!");
+            console.log("WebGL vendor:", gl.getParameter(gl.VENDOR));
+            console.log("WebGL renderer:", gl.getParameter(gl.RENDERER));
+            console.log("WebGL version:", gl.getParameter(gl.VERSION));
+            return true;
+        } catch (e) {
+            console.error("Error checking WebGL support:", e);
+            return false;
+        }
+    }
+    
+    // Check WebGL support before setup
+    const webglSupported = checkWebGLSupport();
+    console.log("WebGL supported:", webglSupported);
+
     // p5.js setup function
     p.setup = () => {
+        console.log("Starting p5.js setup...");
         // Create canvas with WebGL mode
-        const canvas = p.createCanvas(
-            CONFIG.render.width,
-            CONFIG.render.height,
-            p.WEBGL // Use p.WEBGL
-        );
-        canvas.parent('sketch-holder');
+        try {
+            console.log("Creating WebGL canvas with dimensions:", CONFIG.render.width, CONFIG.render.height);
+            const canvas = p.createCanvas(
+                CONFIG.render.width,
+                CONFIG.render.height,
+                p.WEBGL // Use p.WEBGL
+            );
+            console.log("Canvas created successfully:", canvas);
+            canvas.parent('sketch-holder');
+            console.log("Canvas attached to parent");
+            
+            // Set pixel density to 1 for performance
+            p.pixelDensity(1);
+            console.log("Pixel density set to 1");
+        } catch (e) {
+            console.error("Error creating canvas:", e);
+        }
 
-        // Set pixel density to 1 for performance
-        p.pixelDensity(1);
-
-        // Enable orbit controls for camera - Note: orbitControl might need adjustment for instance mode
-        // If orbitControl() is a global function added by a library, it might still work.
-        // If it's part of p5, it might be p.orbitControl() or require a different setup.
-        // For now, assuming it's handled globally or via a library.
-        if (CONFIG.camera.orbitControl) {
-             // Check if orbitControl is available globally or on p
-            if (typeof orbitControl === 'function') {
-                orbitControl(); // Try global first
-            } else if (typeof p.orbitControl === 'function') {
-                 p.orbitControl(); // Try instance method
-            } else {
-                console.warn("orbitControl function not found. Camera controls may not work.");
+        // Enable orbit controls for camera
+        try {
+            if (CONFIG.camera.orbitControl) {
+                console.log("Setting up orbit controls...");
+                // Check if orbitControl is available globally or on p
+                if (typeof orbitControl === 'function') {
+                    console.log("Using global orbitControl");
+                    orbitControl(); // Try global first
+                } else if (typeof p.orbitControl === 'function') {
+                    console.log("Using p.orbitControl");
+                    p.orbitControl(); // Try instance method
+                } else {
+                    console.warn("orbitControl function not found. Camera controls may not work.");
+                }
             }
+        } catch (e) {
+            console.error("Error setting up orbit controls:", e);
         }
 
         // Initialize systems, passing the p5 instance
-        initializeSystems(p);
+        try {
+            console.log("Initializing systems...");
+            initializeSystems(p);
+            console.log("Systems initialized successfully");
+        } catch (e) {
+            console.error("Error initializing systems:", e);
+        }
 
         // Create sound assets folder (doesn't need p)
         createAssetsFolders();
 
         lastFrameTime = p.millis() / 1000; // Initialize lastFrameTime
+        console.log("Setup complete");
     };
 
     /**
@@ -206,20 +254,52 @@ const sketch = (p) => {
         const deltaTime = currentTime - lastFrameTime;
         lastFrameTime = currentTime;
         
-    // Clear background
-        p.background(0);
-    
+        // Clear background with a specific color so we can see if basic rendering works
+        p.background(20, 20, 30); // Dark blue-ish background
+        
+        // Add a simple reference shape if we don't have other rendering
+        let renderSuccess = false;
+        
         // Update physics
-        // (doesn't need p)
         if (physics) physics.update(deltaTime);
-    
-        // Render scene
-        // (assuming renderer uses p internally if needed)
-        if (renderer) renderer.render();
-    
+        
+        // Attempt to render scene with our custom renderer
+        if (renderer) {
+            try {
+                renderer.render();
+                renderSuccess = true;
+            } catch (e) {
+                console.error("Error in renderer.render():", e);
+                renderSuccess = false;
+            }
+        }
+        
+        // Fallback rendering if the main renderer fails
+        if (!renderSuccess) {
+            // Add some debug text to show we're in fallback rendering mode
+            p.push(); // Save state
+            p.fill(255); // White text
+            p.textSize(16);
+            p.textAlign(p.CENTER, p.CENTER);
+            p.text("FALLBACK RENDERING MODE", p.width/2, 30);
+            
+            // Draw a simple shape at origin for reference
+            p.translate(0, 0, 0);
+            p.noStroke();
+            p.fill(255, 0, 0); // Red
+            p.sphere(50); // Simple sphere as fallback
+            
+            // Add floor grid
+            p.stroke(100);
+            p.noFill();
+            p.rotateX(p.PI/2);
+            p.translate(0, 0, 0);
+            p.plane(500, 500);
+            
+            p.pop(); // Restore state
+        }
+        
         // Update UI
-
-        // (doesn't need p)
         if (ui) ui.update();
     };
 

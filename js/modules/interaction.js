@@ -166,10 +166,22 @@ class InteractionHandler {
      * @returns {Shape} The created shape
      */
     spawnShape(type, position, size, materialId) {
+        // Create a default position if none provided
+        let finalPosition = position;
+        if (!finalPosition) {
+            // Create a position object with the same interface as p5.Vector
+            finalPosition = {
+                x: 0, y: 5, z: 0,
+                copy: function() {
+                    return { x: this.x, y: this.y, z: this.z, copy: this.copy };
+                }
+            };
+        }
+        
         // Create a new shape
         const shape = new Shape({
             type: type,
-            position: position || this.p.createVector(0, 5, 0), // Default spawn above ground
+            position: finalPosition,
             size: size || CONFIG.shapes.defaultSize,
             materialId: materialId || 0
         });
