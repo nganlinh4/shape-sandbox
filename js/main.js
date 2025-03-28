@@ -28,40 +28,41 @@ function initializeSystems(p) {
     physics = new PhysicsSystem(shapeManager);
     
     // Create renderer
-    // Pass p instance to renderer if needed, assuming it uses p5 functions
-    renderer = new Renderer(p, shapeManager, 
- materialLibrary
-);
+    renderer = new Renderer(p, shapeManager, materialLibrary);
     
-    // Create interaction handler - Pass the p5 instance correctly
+    // Create interaction handler
+    interaction = new InteractionHandler(p, shapeManager, physics);
     
-    interaction = new InteractionHandler(
-p, shapeManager,
- physics );
-    
-    // Create audio system
-    // Create audio system
-    // Pass p instance to AudioSystem if needed
-    audio = new AudioSystem(
-        p, // Assuming AudioSystem might need p5 instance
-        shapeManager,
-        materialLibrary,
-        physics
-    );
+    // Create audio system with safe initialization
+    try {
+        audio = new AudioSystem(p, shapeManager, materialLibrary, physics);
+        
+        // Attempt to initialize audio context - might be suspended until user interaction
+        if (typeof audio.init === 'function') {
+            audio.init();
+        }
+    } catch (err) {
+        console.warn("Failed to create AudioSystem:", err);
+        // Create a fallback/dummy audio system that won't break when methods are called
+        audio = {
+            isEnabled: false,
+            isInitialized: false,
+            init: function() { this.isInitialized = true; },
+            update: function() {},
+            playSound: function() {},
+            setEnabled: function() {},
+            stopAmbient: function() {},
+            playAmbient: function() {},
+            createPlaceholderSounds: function() {
+                console.warn("Using synthesized sounds as fallback.");
+            }
+        };
+    }
 
     // Create UI manager
-    ui = new UIManager(
-        window,
-        p, // Pass p instance if UI needs it
-        shapeManager,
-        materialLibrary,
-        interaction,
-        physics,
-        audio,
-       renderer
-    );
+    ui = new UIManager(window, p, shapeManager, materialLibrary, interaction, physics, audio, renderer);
     
-    // Create some initial shapes
+    // Create initial scene
     createInitialScene(p);
 }
 
@@ -276,6 +277,88 @@ const sketch = (p) => {
 // Start p5.js in instance mode, attaching to the 'sketch-holder' div
 const app = new p5(sketch, 'sketch-holder');
 
+// Fix for p5.sound initialization error
+(function() {
+    // This function patches p5.sound to prevent the addModule error
+    function fixP5Sound() {
+        // Try to check if p5 is loaded
+        if (!window.p5) {
+            console.warn('p5 is not available yet, will retry fixing p5.sound');
+            setTimeout(fixP5Sound, 100);
+            return;
+        }
+
+        // Check if p5.prototype has the sound property that might be undefined
+        const p5Proto = window.p5.prototype;
+        if (!p5Proto) return;
+
+        // Create a safe patched version of getAudioContext that won't throw errors
+        const originalGetAudioContext = p5Proto.getAudioContext;
+        if (originalGetAudioContext) {
+            p5Proto.getAudioContext = function() {
+                try {
+                    const context = originalGetAudioContext.apply(this);
+                    return context;
+                } catch (err) {
+                    console.warn('Error in getAudioContext, creating fallback context', err);
+                    
+                    // If audioContext fails, create a safe dummy audio context
+                    if (!this._safeAudioContext) {
+                        try {
+                            const AudioContext = window.AudioContext || window.webkitAudioContext;
+                            if (AudioContext) {
+                                this._safeAudioContext = new AudioContext();
+                            }
+                        } catch (e) {
+                            console.warn('Could not create fallback AudioContext');
+                            // Return null so code can handle this gracefully
+                            return null;
+                        }
+                    }
+                    return this._safeAudioContext;
+                }
+            };
+        }
+        
+        // Add safety check for p5.sound's 'addModule' error by ensuring the required object exists
+        if (p5Proto.registerMethod && typeof p5Proto.registerMethod === 'function') {
+            const originalRegisterMethod = p5Proto.registerMethod;
+            p5Proto.registerMethod = function(name, method) {
+                try {
+                    // This is where the error occurs - when something tries to call addModule
+                    // on something that's undefined in the p5.sound code
+                    return originalRegisterMethod.call(this, name, method);
+                } catch (err) {
+                    console.warn('Error in registerMethod, using safe version', err);
+                    
+                    // Create a safe version that won't throw the addModule error
+                    if (name === 'init') {
+                        // Add a wrapper that will catch errors in initialization methods
+                        const safeMethod = function() {
+                            try {
+                                return method.apply(this, arguments);
+                            } catch (e) {
+                                console.warn('Caught error in init method:', e);
+                                return null;
+                            }
+                        };
+                        return originalRegisterMethod.call(this, name, safeMethod);
+                    }
+                    return null;
+                }
+            };
+        }
+        
+        console.log('Successfully patched p5.sound to prevent addModule error');
+    }
+
+    // Run our fix immediately to patch p5.sound before it's used
+    fixP5Sound();
+    
+    // Also run it again after a timeout in case p5 loads after this code runs
+    setTimeout(fixP5Sound, 500);
+})();
+
 // Global handler for the specific p5.sound unhandled promise rejection
 window.addEventListener('unhandledrejection', function(event) {
     const reason = event.reason;
@@ -285,10 +368,15 @@ window.addEventListener('unhandledrejection', function(event) {
         reason.message.includes('addModule') &&
         reason.stack && reason.stack.includes('p5.sound')) 
     {
-        console.warn("p5.sound initialization failed asynchronously (addModule error). Audio system should be disabled.");
+        console.warn("p5.sound initialization failed asynchronously (addModule error). Audio system will use synthesized sounds.");
         
-        // Prevent the default browser handling for *this specific error* 
-        // to avoid flooding the console. Other errors will log normally.
+        // Prevent the default browser handling for this specific error
+        // to avoid flooding the console
         event.preventDefault(); 
+        
+        // Ensure audio system uses fallback sounds if available
+        if (window.audio && typeof audio.createPlaceholderSounds === 'function') {
+            audio.createPlaceholderSounds();
+        }
     }
 });

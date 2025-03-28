@@ -1,14 +1,16 @@
 /**
  * Sound Synthesizer class
  * Dynamically generates sound effects for different material types
+ * Now uses Web Audio API directly (no p5.sound dependency)
  */
 class SoundSynthesizer {
     /**
      * Create a new sound synthesizer
-     * @param {p5} p - The p5 instance
+     * @param {p5} p - The p5 instance (kept for backward compatibility)
      */
     constructor(p) {
-        this.p = p;
+        this.p = p;  // Keep for backward compatibility
+        this.audioContext = null;  // Will be set by AudioSystem
     }
     
     /**
@@ -16,12 +18,13 @@ class SoundSynthesizer {
      * @param {Object} soundLibrary - Reference to the AudioSystem's sounds object
      */
     generateSounds(soundLibrary) {
-        if (!this.p.p5 || !this.p.SoundFile) {
-            console.warn("p5.sound not available. Cannot generate sounds.");
+        // Check if we have a valid audio context
+        if (!this.audioContext) {
+            console.warn("No AudioContext available for SoundSynthesizer. Cannot generate sounds.");
             return;
         }
         
-        console.log("Generating synthesized sound effects...");
+        console.log("Generating synthesized sound effects with Web Audio API...");
         
         // Create sounds for each material type
         this.generateMetalSounds(soundLibrary.impacts.metal);
@@ -31,9 +34,77 @@ class SoundSynthesizer {
         this.generateGenericSounds(soundLibrary.impacts.generic);
         
         // Create ambient sound
-        if (CONFIG.audio.ambientEnabled) {
+        if (CONFIG.audio.ambientEnabled && !soundLibrary.ambient) {
             soundLibrary.ambient = this.generateAmbientSound();
         }
+    }
+    
+    /**
+     * Create a basic oscillator sound
+     * @param {Object} params - Sound parameters
+     * @returns {Object} Sound object with play method
+     */
+    createBasicSound(params) {
+        const sound = {
+            params: params,
+            
+            play: () => {
+                if (!this.audioContext) return;
+                
+                // Create oscillator and gain node
+                const osc = this.audioContext.createOscillator();
+                const gain = this.audioContext.createGain();
+                
+                // Configure oscillator
+                osc.type = params.type || 'sine';
+                osc.frequency.value = params.freq || 440;
+                
+                // Connect nodes
+                osc.connect(gain);
+                gain.connect(this.audioContext.destination);
+                
+                // Set up envelope
+                const now = this.audioContext.currentTime;
+                const attack = params.attack || 0.01;
+                const decay = params.decay || 0.1;
+                const sustain = params.sustain || 0;
+                const release = params.release || 0.3;
+                const sustainLevel = params.sustainLevel || 0.5;
+                const volume = params.volume || 0.2;
+                
+                gain.gain.setValueAtTime(0, now);
+                gain.gain.linearRampToValueAtTime(volume, now + attack);
+                gain.gain.linearRampToValueAtTime(sustainLevel * volume, now + attack + decay);
+                gain.gain.linearRampToValueAtTime(0, now + attack + decay + sustain + release);
+                
+                // Start and stop
+                osc.start(now);
+                osc.stop(now + attack + decay + sustain + release + 0.1);
+                
+                // Clean up
+                osc.onended = () => {
+                    osc.disconnect();
+                    gain.disconnect();
+                };
+                
+                return {
+                    osc: osc,
+                    gain: gain
+                };
+            },
+            
+            // Methods to match the sound interface
+            rate: (r) => {
+                // Adjust the base frequency based on rate
+                params.freq = params.baseFreq * r;
+            },
+            
+            setVolume: (v) => {
+                params.volume = v;
+            }
+        };
+        
+        return sound;
     }
     
     /**
@@ -49,40 +120,40 @@ class SoundSynthesizer {
         // Metal impact 1 - Higher resonant ping
         targetArray.push(this.createResonantSound({
             baseFreq: 700,
-            harmonics: [1.0, 0.5, 0.33, 0.25, 0.2],
+            freq: 700,
+            type: 'triangle',
             attack: 0.001,
             decay: 0.1,
             sustain: 0.3,
             release: 0.5,
             sustainLevel: 0.2,
-            filterFreq: 2000,
-            resonance: 5
+            volume: 0.2
         }));
         
         // Metal impact 2 - Lower, more substantial impact
         targetArray.push(this.createResonantSound({
             baseFreq: 400,
-            harmonics: [1.0, 0.7, 0.5, 0.4],
+            freq: 400,
+            type: 'triangle',  
             attack: 0.001,
             decay: 0.15,
             sustain: 0.2,
             release: 0.4,
             sustainLevel: 0.1,
-            filterFreq: 1500,
-            resonance: 4
+            volume: 0.2
         }));
         
         // Metal impact 3 - Brighter, more tinny sound
         targetArray.push(this.createResonantSound({
             baseFreq: 900,
-            harmonics: [1.0, 0.6, 0.3, 0.15],
+            freq: 900,
+            type: 'square',
             attack: 0.001,
             decay: 0.08,
             sustain: 0.1,
             release: 0.3,
             sustainLevel: 0.15,
-            filterFreq: 3000,
-            resonance: 7
+            volume: 0.15
         }));
     }
     
@@ -99,28 +170,28 @@ class SoundSynthesizer {
         // Wood impact 1 - Solid knock
         targetArray.push(this.createResonantSound({
             baseFreq: 180,
-            harmonics: [1.0, 0.5, 0.25],
+            freq: 180,
+            type: 'triangle',
             attack: 0.001,
             decay: 0.08,
             sustain: 0.05,
             release: 0.2,
             sustainLevel: 0.1,
-            filterFreq: 800,
-            resonance: 2,
+            volume: 0.15,
             noise: 0.1 // Add a touch of noise for more natural sound
         }));
         
         // Wood impact 2 - Hollow knock
         targetArray.push(this.createResonantSound({
             baseFreq: 220,
-            harmonics: [1.0, 0.4, 0.2],
+            freq: 220,
+            type: 'triangle',
             attack: 0.001,
             decay: 0.1,
             sustain: 0.03,
             release: 0.15,
             sustainLevel: 0.08,
-            filterFreq: 600,
-            resonance: 3,
+            volume: 0.15,
             noise: 0.15
         }));
     }
@@ -138,65 +209,64 @@ class SoundSynthesizer {
         // Glass impact 1 - Light tap
         targetArray.push(this.createResonantSound({
             baseFreq: 1200,
-            harmonics: [1.0, 0.3, 0.1],
+            freq: 1200,
+            type: 'sine',
             attack: 0.001,
             decay: 0.05,
             sustain: 0.02,
             release: 0.2,
             sustainLevel: 0.05,
-            filterFreq: 3000,
-            resonance: 8
+            volume: 0.12
         }));
         
         // Glass impact 2 - Sharper tap
         targetArray.push(this.createResonantSound({
             baseFreq: 1500,
-            harmonics: [1.0, 0.2],
+            freq: 1500,
+            type: 'sine',
             attack: 0.001,
             decay: 0.03,
             sustain: 0.01,
             release: 0.15,
             sustainLevel: 0.03,
-            filterFreq: 4000,
-            resonance: 10
+            volume: 0.12
         }));
         
         // Glass breaking - Complex sound with noise
-        targetArray.push(this.createComplexSound({
-            layers: [
-                // High-pitched shattering
-                {
-                    type: 'noise',
-                    filterFreq: 3000,
-                    filterQ: 5,
-                    attack: 0.001,
-                    decay: 0.05,
-                    sustain: 0.2,
-                    release: 0.3,
-                    sustainLevel: 0.7
-                },
-                // Mid-range glass resonance
-                {
-                    type: 'sine',
-                    freq: 800,
-                    attack: 0.001,
-                    decay: 0.1,
-                    sustain: 0.05,
-                    release: 0.2,
-                    sustainLevel: 0.2
-                },
-                // Lower impact thud
-                {
-                    type: 'triangle',
-                    freq: 300,
-                    attack: 0.001,
-                    decay: 0.08,
-                    sustain: 0.0,
-                    release: 0.1,
-                    sustainLevel: 0.1
-                }
-            ]
-        }));
+        targetArray.push(this.createComplexSound([
+            // High-pitched shattering
+            {
+                type: 'noise',
+                attack: 0.001,
+                decay: 0.05,
+                sustain: 0.2,
+                release: 0.3,
+                sustainLevel: 0.7,
+                volume: 0.15
+            },
+            // Mid-range glass resonance
+            {
+                type: 'sine',
+                freq: 800,
+                attack: 0.001, 
+                decay: 0.1,
+                sustain: 0.05,
+                release: 0.2,
+                sustainLevel: 0.2,
+                volume: 0.1
+            },
+            // Lower impact thud
+            {
+                type: 'triangle',
+                freq: 300,
+                attack: 0.001,
+                decay: 0.08,
+                sustain: 0.0,
+                release: 0.1,
+                sustainLevel: 0.1,
+                volume: 0.08
+            }
+        ]));
     }
     
     /**
@@ -212,28 +282,28 @@ class SoundSynthesizer {
         // Soft impact 1 - Muffled thud
         targetArray.push(this.createResonantSound({
             baseFreq: 120,
-            harmonics: [1.0, 0.3],
+            freq: 120,
+            type: 'sine',
             attack: 0.01,
             decay: 0.15,
             sustain: 0.0,
             release: 0.25,
             sustainLevel: 0.0,
-            filterFreq: 500,
-            resonance: 1,
+            volume: 0.12,
             noise: 0.2
         }));
         
         // Soft impact 2 - Gentle bump
         targetArray.push(this.createResonantSound({
             baseFreq: 100,
-            harmonics: [1.0, 0.2],
+            freq: 100,
+            type: 'sine',
             attack: 0.02,
             decay: 0.2,
             sustain: 0.0,
             release: 0.3,
             sustainLevel: 0.0,
-            filterFreq: 400,
-            resonance: 1,
+            volume: 0.12,
             noise: 0.25
         }));
     }
@@ -248,133 +318,30 @@ class SoundSynthesizer {
         // Generic impact 1 - Medium impact
         targetArray.push(this.createResonantSound({
             baseFreq: 300,
-            harmonics: [1.0, 0.5, 0.25],
+            freq: 300, 
+            type: 'triangle',
             attack: 0.001,
             decay: 0.1,
             sustain: 0.05,
             release: 0.2,
             sustainLevel: 0.1,
-            filterFreq: 1000,
-            resonance: 2,
+            volume: 0.15,
             noise: 0.15
         }));
         
         // Generic impact 2 - Another variation
         targetArray.push(this.createResonantSound({
             baseFreq: 250,
-            harmonics: [1.0, 0.6, 0.3],
+            freq: 250,
+            type: 'triangle',
             attack: 0.001,
             decay: 0.12,
             sustain: 0.03,
             release: 0.25,
             sustainLevel: 0.08,
-            filterFreq: 800,
-            resonance: 2,
+            volume: 0.15,
             noise: 0.1
         }));
-    }
-    
-    /**
-     * Generate ambient background sound
-     * @returns {Object} A sound object with loop capability
-     */
-    generateAmbientSound() {
-        // Create a rich ambient sound with multiple layers
-        const duration = 10.0; // 10 second loop
-        const sampleRate = 44100;
-        const channels = 1; // Mono for simplicity
-        const numSamples = Math.floor(duration * sampleRate);
-        
-        // Create an audio buffer for the ambient sound
-        // Use p5's managed AudioContext
-        const audioContext = this.p.getAudioContext();
-        if (!audioContext) {
-            console.warn("p5 AudioContext not available for synthesizer.");
-            return null; // Cannot generate sound without context
-        }
-        const buffer = audioContext.createBuffer(channels, numSamples, sampleRate);
-        const data = buffer.getChannelData(0); // Get data for first channel
-        
-        // Generate ambient sound layers
-        
-        // Layer 1: Low drone
-        const droneFreq = 60; // 60 Hz base
-        const droneAmp = 0.1;
-        this.fillBufferWithWaveform(data, droneFreq, droneAmp, 'sine', sampleRate);
-        
-        // Layer 2: Gentle pad
-        const padFreq = 90; // 90 Hz, harmonically related
-        const padAmp = 0.05;
-        this.addToBufferWithWaveform(data, padFreq, padAmp, 'triangle', sampleRate);
-        
-        // Layer 3: High shimmer
-        const shimmerFreq = 180; // 180 Hz 
-        const shimmerAmp = 0.03;
-        this.addToBufferWithWaveform(data, shimmerFreq, shimmerAmp, 'sine', sampleRate);
-        
-        // Layer 4: Slow modulation
-        this.addModulation(data, 0.1, 0.3, sampleRate);
-        
-        // Layer 5: Very gentle noise background
-        this.addNoiseToBuffer(data, 0.02);
-        
-        // Apply fade in and fade out
-        const fadeTime = Math.floor(sampleRate * 0.5); // 0.5 second fade
-        this.applyFadeInOut(data, fadeTime);
-        
-        // Create p5.sound compatible object
-        const ambientSound = {
-            buffer: buffer,
-            sourceNode: null,
-            gainNode: null,
-            isPlaying: false,
-            
-            // Methods to match p5.sound API
-            // Use arrow function to retain 'this' context of SoundSynthesizer
-            play: () => { 
-                if (this.isPlaying) this.stop();
-                
-                // Access the audioContext captured from the outer scope
-                this.sourceNode = audioContext.createBufferSource();
-                this.sourceNode.buffer = this.buffer;
-                
-                this.gainNode = audioContext.createGain();
-                this.gainNode.gain.value = 0.2; // Initial volume
-                
-                this.sourceNode.connect(this.gainNode);
-                this.gainNode.connect(audioContext.destination);
-                
-                this.sourceNode.loop = false; // We handle looping manually
-                this.sourceNode.start();
-                this.isPlaying = true;
-                
-                // Schedule next loop
-                setTimeout(() => {
-                    // Inside setTimeout, 'this' refers to the ambientSound object itself
-                    if (ambientSound.isPlaying) ambientSound.play() ;
-                }, duration * 900); // Slightly less than duration to avoid gaps
-            },
-            
-            loop: () => { // Arrow function
-                this.play();
-            },
-            
-            stop: () => { // Arrow function
-                if (this.sourceNode && this.isPlaying) {
-                    this.sourceNode.stop();
-                    this.isPlaying = false;
-                }
-            },
-            
-            setVolume: (vol) => { // Arrow function
-                if (this.gainNode) {
-                    this.gainNode.gain.value = vol;
-                }
-            },
-            // Removed getAudioContext
-        };
-        
-        return ambientSound;
     }
     
     /**
@@ -383,88 +350,144 @@ class SoundSynthesizer {
      * @returns {Object} A playable sound object
      */
     createResonantSound(params) {
-        // Create a p5.MonoSynth-like object
         const sound = {
-            // Sound parameters
             params: params,
             
-            // Methods to match p5.sound API
             play: () => {
-                const p = this.p;
+                if (!this.audioContext) return;
                 
-                // Create oscillators for each harmonic
+                const now = this.audioContext.currentTime;
                 const oscillators = [];
-                const env = new p.Envelope();
+                const gainNodes = [];
+                const finalGain = this.audioContext.createGain();
                 
-                // Set envelope based on parameters
-                env.setADSR(
-                    params.attack || 0.001,
-                    params.decay || 0.1,
-                    params.sustain || 0.2,
-                    params.release || 0.5
-                );
-                env.setRange(1, 0);
+                // Set overall volume
+                finalGain.gain.value = params.volume || 0.2;
+                finalGain.connect(this.audioContext.destination);
                 
-                // Create filter if needed
-                let filter = null;
-                if (params.filterFreq) {
-                    filter = new p.Filter();
-                    filter.setType('lowpass');
-                    filter.freq(params.filterFreq);
-                    filter.res(params.resonance || 1);
-                }
+                // Create harmonics - simpler implementation without p5.sound
+                const numHarmonics = 3; // Simple approximation
                 
-                // Create noise component if needed
-                let noise = null;
-                if (params.noise && params.noise > 0) {
-                    noise = new p.Noise('white');
-                    noise.amp(params.noise);
-                    if (filter) {
-                        noise.connect(filter);
-                    }
-                    noise.start();
+                for (let i = 0; i < numHarmonics; i++) {
+                    const osc = this.audioContext.createOscillator();
+                    const gain = this.audioContext.createGain();
                     
-                    // Stop noise after the sound duration
-                    setTimeout(() => {
-                        noise.amp(0, params.release);
-                        setTimeout(() => noise.stop(), params.release * 1000);
-                    }, (params.attack + params.decay + params.sustain) * 1000);
-                }
-                
-                // Create oscillators for harmonics
-                params.harmonics.forEach((strength, i) => {
-                    const osc = new p.Oscillator();
-                    const harmFreq = params.baseFreq * (i + 1);
-                    osc.setType('sine');
-                    osc.freq(harmFreq);
-                    osc.amp(strength * 0.2); // Scale total amplitude
+                    // Calculate harmonic frequency and strength
+                    const harmonicFreq = params.freq * (i + 1);
+                    const harmonicStrength = 1 / (i + 1);
                     
-                    if (filter) {
-                        osc.connect(filter);
-                    }
+                    // Configure oscillator
+                    osc.type = params.type || 'sine';
+                    osc.frequency.value = harmonicFreq;
                     
+                    // Set up envelope
+                    gain.gain.setValueAtTime(0, now);
+                    gain.gain.linearRampToValueAtTime(harmonicStrength, now + (params.attack || 0.01));
+                    gain.gain.linearRampToValueAtTime(
+                        harmonicStrength * (params.sustainLevel || 0.5), 
+                        now + (params.attack || 0.01) + (params.decay || 0.1)
+                    );
+                    gain.gain.linearRampToValueAtTime(
+                        0, 
+                        now + (params.attack || 0.01) + (params.decay || 0.1) + 
+                        (params.sustain || 0.3) + (params.release || 0.5)
+                    );
+                    
+                    // Connect nodes
+                    osc.connect(gain);
+                    gain.connect(finalGain);
+                    
+                    // Start oscillator
+                    osc.start(now);
+                    osc.stop(now + 
+                           (params.attack || 0.01) + 
+                           (params.decay || 0.1) + 
+                           (params.sustain || 0.3) + 
+                           (params.release || 0.5) + 0.1);
+                    
+                    // Store for cleanup
                     oscillators.push(osc);
-                    osc.start();
+                    gainNodes.push(gain);
+                }
+                
+                // Add noise if requested
+                if (params.noise && params.noise > 0) {
+                    // Create noise buffer
+                    const bufferSize = 2 * this.audioContext.sampleRate;
+                    const noiseBuffer = this.audioContext.createBuffer(
+                        1, bufferSize, this.audioContext.sampleRate);
+                    const output = noiseBuffer.getChannelData(0);
                     
-                    // Apply envelope
-                    env.play(osc);
-                });
+                    for (let i = 0; i < bufferSize; i++) {
+                        output[i] = Math.random() * 2 - 1;
+                    }
+                    
+                    // Create noise source and gain
+                    const noise = this.audioContext.createBufferSource();
+                    noise.buffer = noiseBuffer;
+                    const noiseGain = this.audioContext.createGain();
+                    noiseGain.gain.value = params.noise * params.volume;
+                    
+                    // Configure envelope
+                    noiseGain.gain.setValueAtTime(0, now);
+                    noiseGain.gain.linearRampToValueAtTime(params.noise * params.volume, now + (params.attack || 0.01));
+                    noiseGain.gain.linearRampToValueAtTime(
+                        params.noise * params.volume * (params.sustainLevel || 0.5), 
+                        now + (params.attack || 0.01) + (params.decay || 0.1)
+                    );
+                    noiseGain.gain.linearRampToValueAtTime(
+                        0, 
+                        now + (params.attack || 0.01) + (params.decay || 0.1) + 
+                        (params.sustain || 0.1) + (params.release || 0.5)
+                    );
+                    
+                    // Connect noise
+                    noise.connect(noiseGain);
+                    noiseGain.connect(finalGain);
+                    
+                    // Start noise
+                    noise.start(now);
+                    noise.stop(now + 
+                            (params.attack || 0.01) + 
+                            (params.decay || 0.1) + 
+                            (params.sustain || 0.1) + 
+                            (params.release || 0.5) + 0.1);
+                            
+                    // Add to list for potential cleanup
+                    oscillators.push(noise);
+                }
                 
-                // Stop oscillators after envelope completes
-                const totalDuration = (params.attack + params.decay + 
-                                      params.sustain + params.release) * 1000;
-                
+                // Clean up after sound completes
                 setTimeout(() => {
+                    finalGain.disconnect();
                     oscillators.forEach(osc => {
-                        osc.stop();
+                        try {
+                            osc.disconnect();
+                        } catch (e) {
+                            // Ignore any disconnect errors
+                        }
                     });
-                }, totalDuration);
+                    gainNodes.forEach(gain => {
+                        try {
+                            gain.disconnect();
+                        } catch (e) {
+                            // Ignore any disconnect errors
+                        }
+                    });
+                }, ((params.attack || 0.01) + 
+                   (params.decay || 0.1) + 
+                   (params.sustain || 0.3) + 
+                   (params.release || 0.5) + 0.2) * 1000);
             },
             
-            // Dummy methods to match expected sound interface
-            rate: function(r) {},
-            setVolume: function(v) {},
-            stop: function() {}
+            // Interface methods
+            rate: (r) => {
+                params.freq = params.baseFreq * r;
+            },
+            
+            setVolume: (v) => {
+                params.volume = v;
+            }
         };
         
         return sound;
@@ -472,196 +495,274 @@ class SoundSynthesizer {
     
     /**
      * Create a more complex layered sound
-     * @param {Object} params - Parameters defining the sound layers
+     * @param {Array} layers - Array of layer parameters
      * @returns {Object} A playable sound object 
      */
-    createComplexSound(params) {
-        // Create a sound comprised of multiple layers
+    createComplexSound(layers) {
         const sound = {
-            // Sound parameters
-            params: params,
+            layers: layers,
             
-            // Methods to match p5.sound API
             play: () => {
-                const p = this.p;
+                if (!this.audioContext) return;
+                
+                const now = this.audioContext.currentTime;
+                const allNodes = [];
+                const finalGain = this.audioContext.createGain();
+                finalGain.gain.value = 1.0;
+                finalGain.connect(this.audioContext.destination);
                 
                 // For each layer, create the appropriate sound source
-                params.layers.forEach(layer => {
-                    // Create envelope for this layer
-                    const env = new p.Envelope();
-                    env.setADSR(
-                        layer.attack || 0.01,
-                        layer.decay || 0.1,
-                        layer.sustain || 0.3,
-                        layer.release || 0.5
-                    );
-                    env.setRange(layer.sustainLevel || 0.5, 0);
-                    
-                    // Create sound generator based on type
+                layers.forEach(layer => {
                     if (layer.type === 'noise') {
-                        // Create noise source
-                        const noise = new p.Noise('white');
+                        // Create noise
+                        const bufferSize = 2 * this.audioContext.sampleRate;
+                        const noiseBuffer = this.audioContext.createBuffer(
+                            1, bufferSize, this.audioContext.sampleRate);
+                        const output = noiseBuffer.getChannelData(0);
                         
-                        // Apply filter if specified
-                        if (layer.filterFreq) {
-                            const filter = new p.Filter();
-                            filter.setType('bandpass');
-                            filter.freq(layer.filterFreq);
-                            filter.res(layer.filterQ || 1);
-                            noise.connect(filter);
+                        for (let i = 0; i < bufferSize; i++) {
+                            output[i] = Math.random() * 2 - 1;
                         }
                         
-                        noise.start();
-                        env.play(noise);
+                        // Create noise source
+                        const noise = this.audioContext.createBufferSource();
+                        noise.buffer = noiseBuffer;
                         
-                        // Stop noise after envelope
-                        const duration = (layer.attack + layer.decay + 
-                                         layer.sustain + layer.release) * 1000;
-                        setTimeout(() => {
-                            noise.stop();
-                        }, duration);
+                        // Create gain for envelope
+                        const gain = this.audioContext.createGain();
+                        
+                        // Apply filter if specified
+                        let destination = gain;
+                        if (layer.filterFreq) {
+                            const filter = this.audioContext.createBiquadFilter();
+                            filter.type = 'bandpass';
+                            filter.frequency.value = layer.filterFreq;
+                            filter.Q.value = layer.filterQ || 1;
+                            
+                            noise.connect(filter);
+                            filter.connect(gain);
+                            destination = filter;
+                            allNodes.push(filter);
+                        } else {
+                            noise.connect(gain);
+                        }
+                        
+                        // Set up envelope
+                        gain.gain.setValueAtTime(0, now);
+                        gain.gain.linearRampToValueAtTime(layer.volume || 0.2, now + (layer.attack || 0.01));
+                        gain.gain.linearRampToValueAtTime(
+                            (layer.sustainLevel || 0.5) * (layer.volume || 0.2), 
+                            now + (layer.attack || 0.01) + (layer.decay || 0.1)
+                        );
+                        gain.gain.linearRampToValueAtTime(
+                            0, 
+                            now + (layer.attack || 0.01) + (layer.decay || 0.1) + 
+                            (layer.sustain || 0.3) + (layer.release || 0.5)
+                        );
+                        
+                        // Connect to main output
+                        gain.connect(finalGain);
+                        
+                        // Start and stop the noise
+                        noise.start(now);
+                        noise.stop(now + 
+                               (layer.attack || 0.01) + 
+                               (layer.decay || 0.1) + 
+                               (layer.sustain || 0.3) + 
+                               (layer.release || 0.5) + 0.1);
+                        
+                        // Store for cleanup
+                        allNodes.push(noise, gain);
                     }
                     else {
-                        // Create oscillator source
-                        const osc = new p.Oscillator(layer.type);
-                        osc.freq(layer.freq || 440);
+                        // Create oscillator
+                        const osc = this.audioContext.createOscillator();
+                        const gain = this.audioContext.createGain();
+                        
+                        // Configure oscillator
+                        osc.type = layer.type || 'sine';
+                        osc.frequency.value = layer.freq || 440;
                         
                         // Apply filter if needed
                         if (layer.filterFreq) {
-                            const filter = new p.Filter();
-                            filter.setType('lowpass');
-                            filter.freq(layer.filterFreq);
-                            filter.res(layer.filterQ || 1);
+                            const filter = this.audioContext.createBiquadFilter();
+                            filter.type = 'lowpass';
+                            filter.frequency.value = layer.filterFreq;
+                            filter.Q.value = layer.filterQ || 1;
+                            
                             osc.connect(filter);
+                            filter.connect(gain);
+                            allNodes.push(filter);
+                        } else {
+                            osc.connect(gain);
                         }
                         
-                        osc.start();
-                        env.play(osc);
+                        // Set up envelope
+                        gain.gain.setValueAtTime(0, now);
+                        gain.gain.linearRampToValueAtTime(layer.volume || 0.2, now + (layer.attack || 0.01));
+                        gain.gain.linearRampToValueAtTime(
+                            (layer.sustainLevel || 0.5) * (layer.volume || 0.2), 
+                            now + (layer.attack || 0.01) + (layer.decay || 0.1)
+                        );
+                        gain.gain.linearRampToValueAtTime(
+                            0, 
+                            now + (layer.attack || 0.01) + (layer.decay || 0.1) + 
+                            (layer.sustain || 0.3) + (layer.release || 0.5)
+                        );
                         
-                        // Stop oscillator after envelope
-                        const duration = (layer.attack + layer.decay + 
-                                         layer.sustain + layer.release) * 1000;
-                        setTimeout(() => {
-                            osc.stop();
-                        }, duration);
+                        // Connect to main output
+                        gain.connect(finalGain);
+                        
+                        // Start and stop the oscillator
+                        osc.start(now);
+                        osc.stop(now + 
+                               (layer.attack || 0.01) + 
+                               (layer.decay || 0.1) + 
+                               (layer.sustain || 0.3) + 
+                               (layer.release || 0.5) + 0.1);
+                        
+                        // Store for cleanup
+                        allNodes.push(osc, gain);
                     }
+                });
+                
+                // Clean up after the sound is done
+                const maxDuration = layers.reduce((max, layer) => {
+                    const duration = (layer.attack || 0.01) + 
+                                   (layer.decay || 0.1) + 
+                                   (layer.sustain || 0.3) + 
+                                   (layer.release || 0.5);
+                    return Math.max(max, duration);
+                }, 0);
+                
+                setTimeout(() => {
+                    finalGain.disconnect();
+                    allNodes.forEach(node => {
+                        try {
+                            node.disconnect();
+                        } catch (e) {
+                            // Ignore any disconnect errors
+                        }
+                    });
+                }, (maxDuration + 0.2) * 1000);
+            },
+            
+            // Interface methods
+            rate: (r) => {
+                layers.forEach(layer => {
+                    if (layer.freq) layer.freq = layer.baseFreq * r;
                 });
             },
             
-            // Dummy methods to match expected sound interface
-            rate: function(r) {},
-            setVolume: function(v) {},
-            stop: function() {}
+            setVolume: (v) => {
+                layers.forEach(layer => {
+                    layer.volume = v;
+                });
+            }
         };
         
         return sound;
     }
     
-    // Buffer manipulation helper methods
-    
     /**
-     * Fill a buffer with a waveform
-     * @param {Float32Array} buffer - The audio buffer to fill
-     * @param {number} freq - Frequency in Hz
-     * @param {number} amp - Amplitude (0-1)
-     * @param {string} type - Waveform type (sine, triangle, etc)
-     * @param {number} sampleRate - Audio sample rate
+     * Generate ambient background sound
+     * @returns {Object} A sound object with loop capability
      */
-    fillBufferWithWaveform(buffer, freq, amp, type, sampleRate) {
-        const period = sampleRate / freq;
-        
-        for (let i = 0; i < buffer.length; i++) {
-            const phase = (i % period) / period;
+    generateAmbientSound() {
+        // Create a rich ambient sound without using p5.sound
+        return {
+            play: () => {
+                if (!this.audioContext) return;
+                
+                const oscillators = [];
+                const gains = [];
+                
+                // Base frequencies for ambient sound
+                const freqs = [60, 87, 120, 174];
+                const types = ['sine', 'sine', 'triangle', 'sine'];
+                const vols = [0.1, 0.07, 0.05, 0.03];
+                
+                // Create multiple oscillators
+                for (let i = 0; i < freqs.length; i++) {
+                    const osc = this.audioContext.createOscillator();
+                    const gain = this.audioContext.createGain();
+                    
+                    // Configure oscillator
+                    osc.type = types[i];
+                    osc.frequency.value = freqs[i];
+                    
+                    // Set gain
+                    gain.gain.value = vols[i] * CONFIG.audio.ambientVolume;
+                    
+                    // Connect nodes
+                    osc.connect(gain);
+                    gain.connect(this.audioContext.destination);
+                    
+                    // Start oscillator
+                    osc.start();
+                    
+                    // Store for stop/cleanup
+                    oscillators.push(osc);
+                    gains.push(gain);
+                }
+                
+                // Return controls
+                return {
+                    oscillators: oscillators,
+                    gains: gains,
+                    
+                    loop: () => {
+                        // Already looping
+                    },
+                    
+                    stop: () => {
+                        const now = this.audioContext.currentTime;
+                        
+                        // Fade out all oscillators
+                        oscillators.forEach((osc, i) => {
+                            gains[i].gain.linearRampToValueAtTime(0, now + 1);
+                            osc.stop(now + 1.1);
+                        });
+                    },
+                    
+                    isPlaying: () => true,
+                    
+                    setVolume: (vol) => {
+                        for (let i = 0; i < gains.length; i++) {
+                            gains[i].gain.value = vols[i] * vol;
+                        }
+                    }
+                };
+            },
             
-            if (type === 'sine') {
-                buffer[i] = amp * Math.sin(phase * Math.PI * 2);
-            }
-            else if (type === 'triangle') {
-                buffer[i] = amp * (phase < 0.5 ? 4 * phase - 1 : 3 - 4 * phase);
-            }
-            else if (type === 'sawtooth') {
-                buffer[i] = amp * (2 * phase - 1);
-            }
-            else if (type === 'square') {
-                buffer[i] = amp * (phase < 0.5 ? 1 : -1);
-            }
-        }
-    }
-    
-    /**
-     * Add a waveform to an existing buffer
-     * @param {Float32Array} buffer - The audio buffer to modify
-     * @param {number} freq - Frequency in Hz
-     * @param {number} amp - Amplitude (0-1)
-     * @param {string} type - Waveform type (sine, triangle, etc)
-     * @param {number} sampleRate - Audio sample rate
-     */
-    addToBufferWithWaveform(buffer, freq, amp, type, sampleRate) {
-        const period = sampleRate / freq;
-        
-        for (let i = 0; i < buffer.length; i++) {
-            const phase = (i % period) / period;
+            loop: function() {
+                if (!this._player) {
+                    this._player = this.play();
+                }
+            },
             
-            if (type === 'sine') {
-                buffer[i] += amp * Math.sin(phase * Math.PI * 2);
-            }
-            else if (type === 'triangle') {
-                buffer[i] += amp * (phase < 0.5 ? 4 * phase - 1 : 3 - 4 * phase);
-            }
-            else if (type === 'sawtooth') {
-                buffer[i] += amp * (2 * phase - 1);
-            }
-            else if (type === 'square') {
-                buffer[i] += amp * (phase < 0.5 ? 1 : -1);
-            }
-        }
-    }
-    
-    /**
-     * Add gentle noise to a buffer
-     * @param {Float32Array} buffer - The audio buffer to modify
-     * @param {number} amount - Noise amplitude (0-1)
-     */
-    addNoiseToBuffer(buffer, amount) {
-        for (let i = 0; i < buffer.length; i++) {
-            buffer[i] += (Math.random() * 2 - 1) * amount;
-        }
-    }
-    
-    /**
-     * Add slow modulation to a buffer
-     * @param {Float32Array} buffer - The audio buffer to modify
-     * @param {number} depth - Modulation depth (0-1)
-     * @param {number} rate - Modulation rate in Hz
-     * @param {number} sampleRate - Audio sample rate
-     */
-    addModulation(buffer, depth, rate, sampleRate) {
-        const period = sampleRate / rate;
-        
-        for (let i = 0; i < buffer.length; i++) {
-            const phase = (i % period) / period;
-            const mod = depth * Math.sin(phase * Math.PI * 2);
+            play: function() {
+                this.loop();
+            },
             
-            buffer[i] *= (1 + mod);
-        }
-    }
-    
-    /**
-     * Apply fade in and fade out to avoid clicks
-     * @param {Float32Array} buffer - The audio buffer to modify
-     * @param {number} fadeLength - Length of fade in samples
-     */
-    applyFadeInOut(buffer, fadeLength) {
-        // Fade in
-        for (let i = 0; i < fadeLength; i++) {
-            const factor = i / fadeLength;
-            buffer[i] *= factor;
-        }
-        
-        // Fade out
-        for (let i = 0; i < fadeLength; i++) {
-            const factor = i / fadeLength;
-            buffer[buffer.length - 1 - i] *= factor;
-        }
+            stop: function() {
+                if (this._player) {
+                    this._player.stop();
+                    this._player = null;
+                }
+            },
+            
+            isPlaying: function() {
+                return !!this._player;
+            },
+            
+            setVolume: function(vol) {
+                if (this._player) {
+                    this._player.setVolume(vol);
+                }
+            },
+            
+            _player: null
+        };
     }
 }

@@ -1,11 +1,11 @@
 /**
  * AudioSystem for handling sound effects based on physics interactions
- * Uses p5.sound library for playing sounds
+ * Uses Web Audio API directly without relying on p5.sound
  */
 class AudioSystem {
     /**
      * Create a new audio system
-     * @param {p5} p - The p5 instance
+     * @param {p5} p - The p5 instance (just for consistency, we won't use p5.sound)
      * @param {ShapeManager} shapeManager - The shape manager instance
      * @param {MaterialLibrary} materialLibrary - The material library instance
      * @param {PhysicsSystem} physics - The physics system instance
@@ -38,241 +38,246 @@ class AudioSystem {
         this.isEnabled = CONFIG.audio.enabled;
         this.isInitialized = false;
         
+        // Create our own audio context directly - no p5.sound dependency
+        try {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (AudioContext) {
+                this._audioContext = new AudioContext();
+                // Create master gain node
+                this._masterGain = this._audioContext.createGain();
+                this._masterGain.connect(this._audioContext.destination);
+                this._masterGain.gain.value = CONFIG.audio.masterVolume;
+            }
+        } catch (e) {
+            console.warn("Failed to create AudioContext:", e);
+            this._audioContext = null;
+        }
+        
+        // Initialize synthesis modules
+        this.synthesizer = new SoundSynthesizer(p);
+        
         // Initialization will be triggered by user interaction
     }
     
     /**
-     * Initialize the audio system
+     * Initialize the audio system - must be called from a user interaction event
      */
     init() {
-        // Revert: Contains sound loading/generation and listener setup.
-        // Should be called AFTER user interaction.
-        
         if (this.isInitialized || !this.isEnabled) return; // Prevent multiple initializations or if disabled
-
-        console.log("Attempting AudioSystem initialization...");
-
-        // Check if p5.sound is available AND if audio context is running
-        const audioContext = this.p.getAudioContext();
-        if (!this.p.loadSound || !audioContext || audioContext.state !== 'running') {
-            console.warn(`p5.sound not ready or AudioContext not running (state: ${audioContext?.state}). Audio disabled.`);
+        
+        console.log("Initializing AudioSystem...");
+        
+        try {
+            // Resume audio context if it exists and is suspended
+            if (this._audioContext && this._audioContext.state === 'suspended') {
+                this._audioContext.resume().then(() => {
+                    console.log(`AudioContext resumed: ${this._audioContext.state}`);
+                }).catch(err => {
+                    console.warn("Failed to resume AudioContext:", err);
+                });
+            }
+            
+            // Create synthesized sounds (no p5.sound dependency)
+            this.createPlaceholderSounds();
+            
+            // Add collision listeners to physics bodies
+            this.setupCollisionListeners();
+            
+            this.isInitialized = true;
+            console.log("AudioSystem initialized with native Web Audio API (no p5.sound)");
+            
+        } catch (err) {
+            console.error("Error during AudioSystem initialization:", err);
+            this.isEnabled = false;
+        }
+    }
+    
+    /**
+     * Create synthesized sounds using our synthesizer
+     */
+    createPlaceholderSounds() {
+        console.log("Creating synthesized sounds...");
+        
+        // Basic audio context validation
+        if (!this._audioContext) {
+            console.warn("AudioContext not available. Audio disabled.");
             this.isEnabled = false;
             return;
         }
         
-        // Load sound effects (synthesis still commented out)
-        try {
-            this.loadSounds();
-        } catch (err) {
-            console.error("Error during loadSounds execution:", err);
-            this.isEnabled = false; // Disable audio if loading fails synchronously
-            // Note: This might not catch the async promise rejection, but worth trying.
-            return; 
-        }
-        
-        // If no sounds were loaded successfully, generate synthetic sounds
-        const hasAnySounds = Object.values(this.sounds.impacts).some(arr => arr.length > 0);
-        // Temporarily disable synthesizer to isolate the error
-        // if (!hasAnySounds) {
-        //     console.log("No sound files loaded. Generating synthetic sounds...");
-        //     // Create a sound synthesizer to generate procedural sounds
-        //     const synth = new SoundSynthesizer(this.p);
-        //     synth.generateSounds(this.sounds);
-        // }
-        
-        // Add collision listeners to physics bodies
-        this.setupCollisionListeners();
-        
-        this.isInitialized = true;
-        console.log("AudioSystem initialized (listeners set up).");
-    }
-    
-    /**
-     * Load sound effects
-     */
-    loadSounds() {
-        // Define the sound files to load
-        const soundFiles = {
-            metal: ['metal_impact_1.mp3', 'metal_impact_2.mp3', 'metal_impact_3.mp3'],
-            wood: ['wood_impact_1.mp3', 'wood_impact_2.mp3'],
-            glass: ['glass_impact_1.mp3', 'glass_impact_2.mp3', 'glass_break.mp3'],
-            soft: ['soft_impact_1.mp3', 'soft_impact_2.mp3'],
-            generic: ['generic_impact_1.mp3', 'generic_impact_2.mp3'],
-            ambient: ['ambient.mp3']
-        };
-        
-        // Create placeholder sounds first - they'll be replaced by loaded sounds if available
-        // Temporarily disable placeholder sounds to isolate the error
-        // this.createPlaceholderSounds();
- 
-        
-        // Track load failures to report once at the end rather than spamming console
-        let loadFailures = 0;
-        
-        // Helper to safely load a sound file with fallback
-        const safeLoadSound = (path) => {
+        // Synthesize sounds using simpler native Web Audio API methods
+        if (this.synthesizer) {
             try {
-                // Final check: Ensure context is running right before loadSound
-                const currentAudioContext = this.p.getAudioContext();
-                if (!currentAudioContext || currentAudioContext.state !== 'running') {
-                    console.warn(`AudioContext not running (state: ${currentAudioContext?.state}) immediately before loadSound for: ${path}`);
-                    loadFailures++;
-                    return null;
-                }
-
-                return this.p.loadSound(
-                    path,
-                    // Success callback - nothing needed
-                    () => {},
-                    // Error callback
-                    (err) => {
-                        loadFailures++;
-                        // Individual errors are not logged to avoid console spam
-                    }
-                );
+                // Use the synthesizer to create sounds directly
+                this.synthesizer.audioContext = this._audioContext; // Pass our audio context to the synthesizer
+                this.synthesizer.generateSounds(this.sounds);
+                return;
             } catch (err) {
-                loadFailures++;
-                return null;
-            }
-        };
-        
-        // Try to load sound files for each material type
-        for (const [materialType, fileNames] of Object.entries(soundFiles)) {
-            if (materialType === 'ambient') {
-                // Handle ambient separately
-                if (CONFIG.audio.ambientEnabled) {
-                    const ambientSound = safeLoadSound('assets/sounds/' + fileNames[0]);
-                    if (ambientSound) this.sounds.ambient = ambientSound;
-                }
-                continue;
-            }
-            
-            // Try to load each sound file for this material
-            for (const fileName of fileNames) {
-                const sound = safeLoadSound('assets/sounds/' + fileName);
-                if (sound) {
-                    this.sounds.impacts[materialType].push(sound);
-                }
+                console.warn("Error using SoundSynthesizer:", err);
+                // Create basic sounds as fallback
             }
         }
         
-        // Log summary of results
-        if (loadFailures > 0) {
-            console.warn(`Failed to load ${loadFailures} sound file(s). Using placeholder sounds.`);
-        }
+        // Fallback: Create basic oscillator sounds with Web Audio API
+        this.createBasicSounds();
     }
     
     /**
-     * Create placeholder oscillator sounds for testing when audio files are not available
+     * Create very basic sounds using only Web Audio API
+     * This is a fallback if the synthesizer fails
      */
-    createPlaceholderSounds() {
-        // Create simple placeholder sounds with oscillators
-        const createOscillator = (baseFreq, type = 'sine', duration = 0.3, variationAmount = 0.1) => {
+    createBasicSounds() {
+        const createSound = (params) => {
             return {
+                params: params,
                 play: () => {
-                    // Frequency variation to make repeated sounds more natural
-                    const freqVariation = baseFreq * variationAmount * (Math.random() * 2 - 1);
-                    const freq = baseFreq + freqVariation;
+                    if (!this._audioContext || !this.isEnabled) return;
                     
-                    const osc = new this.p.Oscillator(type);
-                    osc.freq(freq);
-                    osc.amp(0);
-                    osc.start();
-                    osc.amp(0.2, 0.01); // Quick fade in
-                    osc.amp(0, duration); // Fade out
+                    // Create oscillator
+                    const osc = this._audioContext.createOscillator();
+                    const gainNode = this._audioContext.createGain();
                     
-                    // Create a simple envelope for more realistic sound
-                    const env = new this.p.Envelope();
-                    env.setADSR(0.01, 0.1, 0.1, duration);
-                    env.setRange(0.2, 0);
-                    env.play();
+                    // Set frequency and type
+                    osc.frequency.value = params.freq;
+                    osc.type = params.type || 'sine';
                     
-                    // Stop oscillator after sound completes
-                    setTimeout(() => osc.stop(), duration * 1000);
+                    // Connect nodes
+                    osc.connect(gainNode);
+                    gainNode.connect(this._masterGain);
                     
-                    return osc;
+                    // Set up envelope
+                    const now = this._audioContext.currentTime;
+                    gainNode.gain.value = 0;
+                    gainNode.gain.setValueAtTime(0, now);
+                    gainNode.gain.linearRampToValueAtTime(params.volume || 0.2, now + 0.01);
+                    gainNode.gain.exponentialRampToValueAtTime(0.001, now + (params.duration || 0.5));
+                    
+                    // Start and stop
+                    osc.start(now);
+                    osc.stop(now + (params.duration || 0.5) + 0.1);
+                    
+                    // Clean up
+                    osc.onended = () => {
+                        osc.disconnect();
+                        gainNode.disconnect();
+                    };
                 },
-                rate: (r) => {}, // Dummy method for compatibility
-                setVolume: (v) => {}, // Dummy method for compatibility
-                isPlaying: () => false // Dummy method for compatibility
+                rate: (r) => {}, // Adjust pitch if needed
+                setVolume: (v) => {}, // Adjust volume if needed
+                isPlaying: () => false // Dummy check
             };
         };
         
-        // Create more realistic placeholder sounds for each material
-        
-        // Metal: Higher pitch, metallic timbre
+        // Create material sounds
         this.sounds.impacts.metal = [
-            createOscillator(600, 'square', 0.4, 0.05),  // Higher, cleaner sound
-            createOscillator(500, 'triangle', 0.5, 0.05) // Slightly lower variation
+            createSound({ freq: 600, type: 'square', duration: 0.4, volume: 0.2 }),
+            createSound({ freq: 500, type: 'triangle', duration: 0.5, volume: 0.2 })
         ];
         
-        // Wood: Medium pitch, woody timbre
         this.sounds.impacts.wood = [
-            createOscillator(300, 'triangle', 0.3, 0.1),
-            createOscillator(250, 'triangle', 0.35, 0.1)
+            createSound({ freq: 300, type: 'triangle', duration: 0.3, volume: 0.15 }),
+            createSound({ freq: 250, type: 'triangle', duration: 0.35, volume: 0.15 })
         ];
         
-        // Glass: Very high pitch, pure tones
         this.sounds.impacts.glass = [
-            createOscillator(800, 'sine', 0.3, 0.2), // Pure tone for gentle impact
-            createOscillator(1200, 'sawtooth', 0.2, 0.3) // Harsher tone for breaking
+            createSound({ freq: 800, type: 'sine', duration: 0.3, volume: 0.15 }),
+            createSound({ freq: 1200, type: 'sawtooth', duration: 0.2, volume: 0.12 })
         ];
         
-        // Soft: Low pitch, gentle sound
         this.sounds.impacts.soft = [
-            createOscillator(150, 'sine', 0.5, 0.1),
-            createOscillator(180, 'sine', 0.6, 0.1)
+            createSound({ freq: 150, type: 'sine', duration: 0.5, volume: 0.1 }),
+            createSound({ freq: 180, type: 'sine', duration: 0.6, volume: 0.1 })
         ];
         
-        // Generic: Medium pitch, basic sound
         this.sounds.impacts.generic = [
-            createOscillator(400, 'triangle', 0.3, 0.1),
-            createOscillator(350, 'triangle', 0.4, 0.1)
+            createSound({ freq: 400, type: 'triangle', duration: 0.3, volume: 0.15 }),
+            createSound({ freq: 350, type: 'triangle', duration: 0.4, volume: 0.15 })
         ];
         
-        // Create ambient sound if needed
-        if (!this.sounds.ambient && CONFIG.audio.ambientEnabled) {
-            // Create a more complex ambient sound using multiple oscillators
-            this.sounds.ambient = {
-                oscillators: [],
-                play: () => {
-                    // Clear any previous oscillators
-                    this.stopAmbient();
-                    this.sounds.ambient.oscillators = [];
+        // Create ambient sound
+        if (CONFIG.audio.ambientEnabled) {
+            const createAmbientSound = () => {
+                if (!this._audioContext || !this.isEnabled) return;
+                
+                const oscillators = [];
+                const gainNodes = [];
+                
+                // Create three oscillators for a richer sound
+                const freqs = [60, 67, 120];
+                const volumes = [0.05, 0.03, 0.02];
+                const types = ['sine', 'sine', 'sine'];
+                
+                for (let i = 0; i < 3; i++) {
+                    const osc = this._audioContext.createOscillator();
+                    const gain = this._audioContext.createGain();
                     
-                    // Create 3 oscillators with different frequencies for a richer ambient sound
-                    const createAmbientOsc = (freq, type, amp) => {
-                        const osc = new this.p.Oscillator(type);
-                        osc.freq(freq);
-                        osc.amp(amp * CONFIG.audio.ambientVolume);
-                        osc.start();
-                        return osc;
-                    };
+                    osc.frequency.value = freqs[i];
+                    osc.type = types[i];
                     
-                    // Add some oscillators for ambient sound
-                    this.sounds.ambient.oscillators.push(
-                        createAmbientOsc(60, 'sine', 0.1),   // Low drone
-                        createAmbientOsc(67, 'sine', 0.07),  // Harmonic
-                        createAmbientOsc(120, 'sine', 0.05)  // Higher harmonic
-                    );
-                },
-                loop: function() { this.play(); },
-                stop: function() {
-                    if (this.oscillators) {
-                        this.oscillators.forEach(osc => {
-                            osc.amp(0, 1); // Fade out
-                            setTimeout(() => osc.stop(), 1100);
+                    gain.gain.value = volumes[i] * CONFIG.audio.ambientVolume;
+                    
+                    osc.connect(gain);
+                    gain.connect(this._masterGain);
+                    
+                    oscillators.push(osc);
+                    gainNodes.push(gain);
+                    
+                    osc.start();
+                }
+                
+                return {
+                    oscillators: oscillators,
+                    gainNodes: gainNodes,
+                    loop: function() { 
+                        // Already looping - nothing to do 
+                    },
+                    play: function() {
+                        // Already playing - nothing to do
+                    },
+                    stop: function() {
+                        const now = this._audioContext ? this._audioContext.currentTime : 0;
+                        
+                        this.oscillators.forEach((osc, i) => {
+                            this.gainNodes[i].gain.linearRampToValueAtTime(0, now + 1);
+                            osc.stop(now + 1.1);
                         });
+                        
+                        this.oscillators = [];
+                        this.gainNodes = [];
+                    },
+                    isPlaying: function() {
+                        return this.oscillators.length > 0;
+                    },
+                    setVolume: function(volume) {
+                        this.gainNodes.forEach((gain, i) => {
+                            gain.gain.value = volumes[i] * volume;
+                        });
+                    }
+                };
+            };
+            
+            this.sounds.ambient = {
+                _player: null,
+                loop: function() {
+                    if (!this._player) {
+                        this._player = createAmbientSound();
+                    }
+                },
+                play: function() {
+                    this.loop();
+                },
+                stop: function() {
+                    if (this._player) {
+                        this._player.stop();
+                        this._player = null;
                     }
                 },
                 isPlaying: function() {
-                    return this.oscillators && this.oscillators.length > 0;
+                    return this._player && this._player.isPlaying();
                 },
                 setVolume: function(vol) {
-                    if (this.oscillators) {
-                        this.oscillators.forEach(osc => {
-                            osc.amp(vol, 0.5); // Smooth transition
-                        });
+                    if (this._player) {
+                        this._player.setVolume(vol);
                     }
                 }
             };
@@ -385,8 +390,12 @@ class AudioSystem {
                      randomPitchFactor * (Math.random() * 2 - 1);
         
         // Play sound with calculated parameters
-        sound.rate(rate);
-        sound.setVolume(volume);
+        if (sound.setVolume) {
+            sound.setVolume(volume);
+        }
+        if (sound.rate) {
+            sound.rate(rate);
+        }
         sound.play();
         
         // Track active sound
@@ -427,6 +436,11 @@ class AudioSystem {
         // Initialize if enabling for the first time
         if (enabled && !this.isInitialized) {
             this.init();
+        }
+        
+        // Update master volume
+        if (this._masterGain) {
+            this._masterGain.gain.value = enabled ? CONFIG.audio.masterVolume : 0;
         }
         
         // Handle ambient sound

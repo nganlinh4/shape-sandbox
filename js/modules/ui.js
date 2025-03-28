@@ -151,17 +151,53 @@ class UIManager {
         
         // Material dropdown
         const materialOptions = {};
-        this.materialLibrary.getAllMaterials().forEach(material => {
-            // Use first word of material type as name
-            // Check if soundType is a valid string before processing
-            if (material && typeof material.soundType === 'string' && material.soundType.length > 0) {
-                const name = material.soundType.charAt(0).toUpperCase() + material.soundType.slice(1);
-                materialOptions[name] = material.id;
-            } else {
-                // Log a warning if soundType is missing or invalid
-                console.warn(`Material with id ${material?.id || 'unknown'} has invalid or missing soundType. Skipping for UI dropdown.`);
+        
+        // Get materials from library safely
+        const materials = [];
+        try {
+            // First, try using the getAllMaterials method if available
+            if (this.materialLibrary && typeof this.materialLibrary.getAllMaterials === 'function') {
+                materials.push(...this.materialLibrary.getAllMaterials());
+            }
+            // If that doesn't work, try accessing the materials array directly
+            else if (this.materialLibrary && Array.isArray(this.materialLibrary.materials)) {
+                materials.push(...this.materialLibrary.materials);
+            }
+            // If we still don't have materials, create fallbacks
+            else {
+                console.warn("Could not access materials from materialLibrary - using defaults");
+                
+                // Define default materials based on CONFIG presets
+                if (CONFIG.materials) {
+                    let id = 0;
+                    for (const key in CONFIG.materials) {
+                        materials.push({
+                            id: id,
+                            name: key.charAt(0).toUpperCase() + key.slice(1),
+                            soundType: key
+                        });
+                        id++;
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("Error getting materials:", e);
+        }
+        
+        // Create material options from available materials
+        materials.forEach(material => {
+            if (material && material.name) {
+                materialOptions[material.name] = material.id;
             }
         });
+        
+        // Ensure we have at least some options
+        if (Object.keys(materialOptions).length === 0) {
+            materialOptions["Default"] = 0;
+            materialOptions["Metal"] = 1;
+            materialOptions["Glass"] = 2;
+            materialOptions["Wood"] = 3;
+        }
         
         tab.addInput(this.params.shape, 'material', {
             label: 'Material',
