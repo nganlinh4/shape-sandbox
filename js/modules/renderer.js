@@ -555,8 +555,8 @@ class Renderer {
                 this.projectionMatrix = new p5.Matrix();
             }
             
-            // Always ensure we have a valid camera position in fallback mode
-            this.cameraPos = this.cameraPos || p.createVector(
+            // Always ensure we have a valid camera position
+            this.cameraPos = p.createVector(
                 CONFIG.camera.defaultPosition[0],
                 CONFIG.camera.defaultPosition[1], 
                 CONFIG.camera.defaultPosition[2]
@@ -602,7 +602,12 @@ class Renderer {
             );
         } catch (e) {
             console.warn("Error inverting view matrix for camera position");
-            // Keep the existing camera position (don't reset to default)
+            // Fall back to the default camera position
+            this.cameraPos = p.createVector(
+                CONFIG.camera.defaultPosition[0],
+                CONFIG.camera.defaultPosition[1], 
+                CONFIG.camera.defaultPosition[2]
+            );
         }
     }
 
@@ -637,6 +642,7 @@ class Renderer {
         const frameStartTime = performance.now();
 
         // Update camera matrices
+
         this.updateCameraMatrices();
 
         // Check if post-processing is enabled (only for advanced rendering)

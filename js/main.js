@@ -292,9 +292,24 @@ const sketch = (p) => {
         // Clear background with a specific color so we can see if basic rendering works
         p.background(20, 20, 30); // Dark blue-ish background
         
+        // Reset camera to bird's eye view position on first frame or when requested
+        if (p.frameCount === 1) {
+            // Set camera position from config
+            p.camera(
+                CONFIG.camera.defaultPosition[0], 
+                CONFIG.camera.defaultPosition[1], 
+                CONFIG.camera.defaultPosition[2], 
+                CONFIG.camera.defaultTarget[0], 
+                CONFIG.camera.defaultTarget[1], 
+                CONFIG.camera.defaultTarget[2], 
+                0, 1, 0
+            );
+            console.log("Camera initialized to bird's eye view");
+        }
+        
         // Apply orbit controls EVERY FRAME if enabled - this is critical for them to work properly
-        if (CONFIG.camera.orbitControl && orbitControlsEnabled && typeof p.orbitControl === 'function') {
-            p.orbitControl();
+        if (typeof p.orbitControl === 'function') {
+            p.orbitControl(4, 4, 0.2); // Adjusted sensitivity parameters for easier control
         }
         
         // Add a simple reference shape if we don't have other rendering

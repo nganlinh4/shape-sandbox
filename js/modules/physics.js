@@ -297,31 +297,31 @@ class PhysicsSystem {
             let finalOrigin = new CANNON.Vec3(camPos.x, camPos.y, camPos.z);
             let finalDirection = new CANNON.Vec3(rayDir.x, rayDir.y, rayDir.z); // Default if transform fails
 
-            if (this.renderer && this.renderer.viewMatrix) {
- // Use this.renderer
+            // Check if renderer and viewMatrix exist before using them
+            if (this.renderer && this.renderer.viewMatrix && this.renderer.viewMatrix.mat4) {
                 try {
                     // Create a direction vector in view space
                     const viewInv = this.renderer.viewMatrix.copy().invert(); // Use this.renderer
                     
-                    // Extract rotation from view matrix (upper 3x3 part)
-                    // and apply it to the ray direction
-                    const m = viewInv.mat4;
-                    const rotatedRayDir = p.createVector(
-                        rayDir.x * m[0] + rayDir.y * m[4] + rayDir.z * m[8],
-                        rayDir.x * m[1] + rayDir.y * m[5] + rayDir.z * m[9],
-                        rayDir.x * m[2] + rayDir.y * m[6] + rayDir.z * m[10]
-                    ).normalize();
-                    
-                    finalDirection.set(rotatedRayDir.x, rotatedRayDir.y, rotatedRayDir.z)
-;
-                    // console.log("Successfully transformed ray direction using view matrix."); // DEBUG
-
+                    // Make sure viewInv and viewInv.mat4 are valid
+                    if (viewInv && viewInv.mat4) {
+                        // Extract rotation from view matrix (upper 3x3 part)
+                        // and apply it to the ray direction
+                        const m = viewInv.mat4;
+                        const rotatedRayDir = p.createVector(
+                            rayDir.x * m[0] + rayDir.y * m[4] + rayDir.z * m[8],
+                            rayDir.x * m[1] + rayDir.y * m[5] + rayDir.z * m[9],
+                            rayDir.x * m[2] + rayDir.y * m[6] + rayDir.z * m[10]
+                        ).normalize();
+                        
+                        finalDirection.set(rotatedRayDir.x, rotatedRayDir.y, rotatedRayDir.z);
+                        // console.log("Successfully transformed ray direction using view matrix."); // DEBUG
+                    }
                 } catch (err) {
                     console.warn("Error transforming ray with view matrix:", err);
                 }
             }
             
-            // Simplified fallback if we can't use the view matrix
             // console.log(`Final Ray - Origin: (${finalOrigin.x.toFixed(2)}, ${finalOrigin.y.toFixed(2)}, ${finalOrigin.z.toFixed(2)}), Direction: (${finalDirection.x.toFixed(2)}, ${finalDirection.y.toFixed(2)}, ${finalDirection.z.toFixed(2)})`); // DEBUG
             return {
                 origin: finalOrigin,

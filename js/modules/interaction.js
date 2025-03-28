@@ -45,22 +45,26 @@ class InteractionHandler {
         this.mouseDragHistory = [];
         this.lastDragTime = performance.now();
         
-        // Only attempt to start dragging if:
-        // 1. Left mouse button is pressed (primary button, button=0)
-        // 2. No modifiers are pressed (to leave alt/ctrl for camera controls)
-        const isLeftClick = event.button === 0;
-        const noModifiers = !event.altKey && !event.ctrlKey && !event.shiftKey && !event.metaKey;
-        
-        if (isLeftClick && noModifiers) {
-            this.draggedShape = this.physics.startDrag(this.mousePos, this.p);
-            this.isDragging = this.draggedShape !== null;
+        try {
+            // Only attempt to start dragging if:
+            // 1. Left mouse button is pressed (primary button, button=0)
+            // 2. No modifiers are pressed (to leave alt/ctrl for camera controls)
+            const isLeftClick = event.button === 0;
+            const noModifiers = !event.altKey && !event.ctrlKey && !event.shiftKey && !event.metaKey;
             
-            // If we hit a shape, select it
-            if (this.draggedShape) {
-                this.selectedShape = this.draggedShape;
-                this.shapeManager.selectShape(this.draggedShape.id);
-                return true; // Only prevent default behavior if we actually grabbed a shape
+            if (isLeftClick && noModifiers) {
+                this.draggedShape = this.physics.startDrag(this.mousePos, this.p);
+                this.isDragging = this.draggedShape !== null;
+                
+                // If we hit a shape, select it
+                if (this.draggedShape) {
+                    this.selectedShape = this.draggedShape;
+                    this.shapeManager.selectShape(this.draggedShape.id);
+                    return true; // Only prevent default behavior if we actually grabbed a shape
+                }
             }
+        } catch (err) {
+            console.warn("Error in mousePress:", err);
         }
         
         return false; // Don't prevent default handling - let orbit controls work

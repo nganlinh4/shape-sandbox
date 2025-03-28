@@ -42,7 +42,7 @@ const CONFIG = {
         fov: 60,                 // Field of view (degrees)
         near: 0.1,               // Near clipping plane
         far: 1000,               // Far clipping plane
-        defaultPosition: [0, 5, 10], // Default camera position
+        defaultPosition: [0, 3, 10], // Default camera position
         defaultTarget: [0, 0, 0],    // Default look target
         orbitControl: true,          // Enable orbit controls
         movementSpeed: 5.0           // Camera movement speed when not using orbit controls
