@@ -20,6 +20,14 @@ class Renderer {
         this.environmentMap = null;
         this.environmentTexture = null; // Hold the WebGL texture object
 
+        // Add initialization state tracking
+        this.initialized = false;
+        this.initializationAttempts = 0;
+        this.maxInitAttempts = 5;
+        this.lastInitAttempt = 0;
+        this.initRetryDelay = 500; // ms between initialization attempts
+        this.shaderCompiled = false;
+
         // Texture manager for handling material textures
         this.textureManager = new TextureManager(p);
 
@@ -55,20 +63,96 @@ class Renderer {
      * Initialize the renderer
      */
     init() {
-        // Create ray marching shader
-        this.shader = this.p.createShader(VERTEX_SHADER, FRAGMENT_SHADER);
+        try {
+            // Create ray marching shader
+            console.log("Creating shader...");
+            this.shader = this.p.createShader(VERTEX_SHADER, FRAGMENT_SHADER);
+            
+            // Check if shader was created properly
+            if (!this.shader) {
+                throw new Error("Failed to create shader - p5.createShader returned null/undefined");
+            }
 
-        // Create data textures
-        this.createDataTextures();
+            // Create data textures
+            this.createDataTextures();
 
-        // Create environment map graphics and texture
-        this.createEnvironmentMap(); // This now calls the updated createCubemapTexture
+            // Create environment map graphics and texture
+            this.createEnvironmentMap();
 
-        // Initialize post-processing system
-        this.postProcess = new PostProcessSystem(this.p);
+            // Initialize post-processing system
+            this.postProcess = new PostProcessSystem(this.p);
 
-        // Load default textures
-        this.loadDefaultTextures();
+            // Load default textures
+            this.loadDefaultTextures();
+            
+            // Schedule shader initialization verification
+            setTimeout(() => this.checkShaderInitialization(), 100);
+            
+        } catch (err) {
+            console.error("Error during renderer initialization:", err);
+            // We'll retry initialization later
+            this.initializationAttempts++;
+            if (this.initializationAttempts < this.maxInitAttempts) {
+                console.log(`Will retry initialization (attempt ${this.initializationAttempts + 1} of ${this.maxInitAttempts}) in ${this.initRetryDelay}ms`);
+                setTimeout(() => this.init(), this.initRetryDelay);
+            } else {
+                console.error("Failed to initialize renderer after multiple attempts");
+            }
+        }
+    }
+    
+    /**
+     * Check if shader is properly initialized and compiled
+     * This helps prevent the "not yet fully initialized" error messages
+     */
+    checkShaderInitialization() {
+        if (this.initialized) return true; // Already verified
+        
+        try {
+            const p = this.p;
+            if (!p || !p._renderer || !p._renderer.GL) {
+                throw new Error("WebGL context not available");
+            }
+            
+            const gl = p._renderer.GL;
+            
+            // Check if shader program exists
+            if (!this.shader || !this.shader._glProgram) {
+                throw new Error("Shader program not created");
+            }
+            
+            // Check if shader is linked
+            const status = gl.getProgramParameter(this.shader._glProgram, gl.LINK_STATUS);
+            if (!status) {
+                const info = gl.getProgramInfoLog(this.shader._glProgram);
+                throw new Error(`Could not link shader program: ${info}`);
+            }
+            
+            // Check if required uniforms are available
+            this.shader.setUniform('uCameraPosition', [0, 0, 0]); // Test setting a uniform
+            
+            console.log("✓ Shader initialized and linked successfully");
+            this.initialized = true;
+            this.shaderCompiled = true;
+            this.usesFallback = false;
+            return true;
+            
+        } catch (err) {
+            console.warn("Shader initialization check failed:", err);
+            
+            // Schedule another check if we haven't exceeded max attempts
+            this.initializationAttempts++;
+            if (this.initializationAttempts < this.maxInitAttempts) {
+                console.log(`Will retry shader initialization check (attempt ${this.initializationAttempts + 1} of ${this.maxInitAttempts}) in ${this.initRetryDelay}ms`);
+                setTimeout(() => this.checkShaderInitialization(), this.initRetryDelay);
+            } else {
+                console.error("Failed to initialize shader after multiple attempts, switching to fallback rendering");
+                // Switch to fallback rendering mode
+                return this.setupFallbackMode();
+            }
+            
+            return false;
+        }
     }
 
     /**
@@ -321,71 +405,49 @@ class Renderer {
     }
 
 
-        // ============================================================== //
-    // ==  UPDATED createCubemapTexture Method (Attempt 4)         == //
-    // ==  Temporarily skipping texParameteri                      == //
+    // ============================================================== //
+    // ==  UPDATED createCubemapTexture Method                      == //
+    // ==  Re-enabling texture parameters                           == //
     // ============================================================== //
     /**
-     * Create a WebGL cubemap texture from six p5.Graphics objects (Attempt 4: Skipping texParameteri)
+     * Create a WebGL cubemap texture from six p5.Graphics objects
      * @param {Array<p5.Graphics>} faces - Array of 6 p5.Graphics for each cube face
      * @returns {WebGLTexture | null} The created cubemap texture or null on failure
      */
     createCubemapTexture(faces) {
-        console.log("[createCubemapTexture v4] Starting.");
+        console.log("[createCubemapTexture] Starting cubemap creation.");
         const gl = this.p._renderer.GL;
         if (!gl) {
-            console.error("[createCubemapTexture v4] WebGL context not available.");
+            console.error("[createCubemapTexture] WebGL context not available.");
             return null;
         }
-        console.log("[createCubemapTexture v4] WebGL Context:", gl);
-        console.log("[createCubemapTexture v4] WebGL Version:", gl.getParameter(gl.VERSION));
-        console.log("[createCubemapTexture v4] Input faces:", faces);
-
+        
         const texture = gl.createTexture();
         if (!texture) {
-             console.error("[createCubemapTexture v4] Failed to create WebGL texture object.");
+             console.error("[createCubemapTexture] Failed to create WebGL texture object.");
              return null;
         }
-        console.log("[createCubemapTexture v4] Created WebGL texture:", texture);
+        
         gl.bindTexture(gl.TEXTURE_CUBE_MAP, texture);
 
-        // Set texture parameters --- TEMPORARILY SKIPPED ---
-        console.warn("[createCubemapTexture v4] Skipping gl.texParameteri calls for debugging.");
-        /* // <--- Start Skip Block
-        console.log("[createCubemapTexture v4] Setting texture parameters...");
-        let paramErrorOccurred = false;
+        // Set texture parameters - RE-ENABLED
         try {
             // Use settings known to be safe for NPOT textures even in WebGL1
             gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
             gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
             gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-
-            const paramError = gl.getError();
-            if (paramError !== gl.NO_ERROR) {
-                let errorString = paramError;
-                for (const key in gl) {
-                    if (gl[key] === paramError) {
-                        errorString = `${key} (${paramError})`;
-                        break;
-                    }
-                }
-                console.error(`[createCubemapTexture v4] WebGL error ${errorString} after texParameteri.`);
-                paramErrorOccurred = true;
-            } else {
-                 console.log("[createCubemapTexture v4] Texture parameters set successfully.");
+            
+            // Add R coordinate wrapping for cubemaps
+            if (gl.getExtension('EXT_texture_filter_anisotropic')) {
+                gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
             }
+            
+            console.log("[createCubemapTexture] Texture parameters set successfully.");
         } catch (e) {
-             console.error("[createCubemapTexture v4] Error setting texture parameters:", e);
-             gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
-             gl.deleteTexture(texture);
-             return null;
+            console.warn("[createCubemapTexture] Error setting texture parameters:", e);
+            // Continue anyway - some platforms might still work without these
         }
-        if (paramErrorOccurred) {
-            console.warn("[createCubemapTexture v4] Proceeding with face upload despite parameter error.");
-        }
-        */ // <--- End Skip Block
-
 
         const targets = [
             gl.TEXTURE_CUBE_MAP_POSITIVE_X, gl.TEXTURE_CUBE_MAP_NEGATIVE_X,
@@ -398,110 +460,73 @@ class Renderer {
              tempCanvas = document.createElement('canvas');
              tempCtx = tempCanvas.getContext('2d');
              if (!tempCanvas || !tempCtx) throw new Error("Failed to create temporary canvas/context.");
-             console.log("[createCubemapTexture v4] Created temporary canvas.");
         } catch (e) {
-             console.error("[createCubemapTexture v4] Error creating temporary canvas:", e);
+             console.error("[createCubemapTexture] Error creating temporary canvas:", e);
              gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
              gl.deleteTexture(texture);
              return null;
         }
 
-        console.log("[createCubemapTexture v4] Processing faces...");
+        console.log("[createCubemapTexture] Processing faces...");
         let success = true;
-        faces.forEach((face, i) => {
-            console.log(`[createCubemapTexture v4] Processing face ${i}...`);
+        
+        for (let i = 0; i < faces.length; i++) {
+            const face = faces[i];
             const target = targets[i];
-            let faceWidth = 0, faceHeight = 0;
-
-            // --- Validation ---
+            
+            // Skip invalid faces but continue processing
             if (!face || !face.elt || !(face.elt instanceof HTMLCanvasElement) || face.width <= 0 || face.height <= 0) {
-                 console.error(`[createCubemapTexture v4] Face ${i} is invalid or not ready. Skipping.`, face);
-                 const size = faces[0]?.width || 256;
-                 faceWidth = faceHeight = Math.max(1, size);
-                 const placeholderData = new Uint8Array(faceWidth * faceHeight * 4);
-                 for (let k = 0; k < placeholderData.length; k += 4) { placeholderData[k] = 255; placeholderData[k + 1] = 0; placeholderData[k + 2] = 255; placeholderData[k + 3] = 255; } // Magenta
-                 try {
-                     gl.texImage2D(target, 0, gl.RGBA, faceWidth, faceHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, placeholderData);
-                     console.warn(`[createCubemapTexture v4] Face ${i} filled with placeholder (Magenta).`);
-                 } catch (placeholderError) {
-                     console.error(`[createCubemapTexture v4] Failed to fill placeholder for face ${i}:`, placeholderError);
-                     success = false;
-                 }
-                 return;
-            }
-            // --- End Validation ---
-
-            faceWidth = face.width;
-            faceHeight = face.height;
-
-            // --- Dimension Sync ---
-             if (tempCanvas.width !== faceWidth || tempCanvas.height !== faceHeight) {
-                 tempCanvas.width = faceWidth;
-                 tempCanvas.height = faceHeight;
-             }
-            // --- End Dimension Sync ---
-
-            // --- Upload Logic using ImageData ---
-            try {
-                tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
-                console.log(`[createCubemapTexture v4] Face ${i}: Drawing face.elt (${face.elt.width}x${face.elt.height}) onto temp canvas (${tempCanvas.width}x${tempCanvas.height}).`);
-                tempCtx.drawImage(face.elt, 0, 0, faceWidth, faceHeight);
-                console.log(`[createCubemapTexture v4] Face ${i}: Getting ImageData...`);
-                const imageData = tempCtx.getImageData(0, 0, faceWidth, faceHeight);
-                console.log(`[createCubemapTexture v4] Face ${i}: Got ImageData (${imageData.width}x${imageData.height}).`);
-
-                // --- The texImage2D call ---
-                console.log(`[createCubemapTexture v4] Face ${i}: Calling texImage2D with ImageData.data...`);
-                gl.texImage2D(
-                    target, 0, gl.RGBA, faceWidth, faceHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, imageData.data
-                );
-                // --- End texImage2D call ---
-                console.log(`[createCubemapTexture v4] Face ${i}: texImage2D call potentially succeeded.`);
-
-                const texError = gl.getError();
-                if (texError !== gl.NO_ERROR) {
-                    let errorString = texError;
-                    for (const key in gl) { if (gl[key] === texError) { errorString = `${key} (${texError})`; break; } }
-                    console.error(`[createCubemapTexture v4] Face ${i}: WebGL error ${errorString} occurred *after* texImage2D call.`);
+                console.warn(`[createCubemapTexture] Face ${i} is invalid - using placeholder.`);
+                const size = 64;
+                const placeholderData = new Uint8Array(size * size * 4);
+                for (let k = 0; k < placeholderData.length; k += 4) { 
+                    placeholderData[k] = 255; placeholderData[k + 1] = 0; 
+                    placeholderData[k + 2] = 255; placeholderData[k + 3] = 255; 
+                } 
+                
+                try {
+                    gl.texImage2D(target, 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, placeholderData);
+                } catch (err) {
+                    console.error(`[createCubemapTexture] Failed to create placeholder for face ${i}:`, err);
                     success = false;
-                } else {
-                     console.log(`[createCubemapTexture v4] Face ${i}: Upload confirmed successful.`);
                 }
-
-            } catch (uploadError) {
-                // This is where the TypeError would likely be caught if it still happens
-                console.error(`[createCubemapTexture v4] Face ${i}: Error during drawImage, getImageData, or texImage2D:`, uploadError);
-                console.error(`[createCubemapTexture v4] Face ${i}: Error Name: ${uploadError.name}, Message: ${uploadError.message}`);
-                success = false;
-
-                // Attempt placeholder on error
-                const placeholderData = new Uint8Array(faceWidth * faceHeight * 4);
-                 for (let k = 0; k < placeholderData.length; k += 4) { placeholderData[k] = 255; placeholderData[k + 1] = 0; placeholderData[k + 2] = 0; placeholderData[k + 3] = 255; } // Red
-                 try {
-                    gl.texImage2D(target, 0, gl.RGBA, faceWidth, faceHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, placeholderData);
-                    console.warn(`[createCubemapTexture v4] Face ${i} filled with error placeholder (Red).`);
-                 } catch (placeholderError) {
-                     console.error(`[createCubemapTexture v4] Failed to fill error placeholder for face ${i}:`, placeholderError);
-                 }
+                continue;
             }
-            // --- End Upload Logic ---
-        });
-
-        console.log("[createCubemapTexture v4] Finished processing faces. Overall success:", success);
-        gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
-        console.log("[createCubemapTexture v4] Unbound texture.");
-
-        if (!success) {
-             console.error("[createCubemapTexture v4] One or more faces failed to upload.");
+            
+            // Use a simpler, more direct approach to upload the texture
+            try {
+                gl.texImage2D(target, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, face.elt);
+                console.log(`[createCubemapTexture] Face ${i} uploaded successfully.`);
+            } catch (uploadError) {
+                console.error(`[createCubemapTexture] Error uploading face ${i}:`, uploadError);
+                success = false;
+                
+                // Create a red placeholder texture for failed uploads
+                const size = 64;
+                const placeholderData = new Uint8Array(size * size * 4);
+                for (let k = 0; k < placeholderData.length; k += 4) { 
+                    placeholderData[k] = 255; placeholderData[k + 1] = 0; 
+                    placeholderData[k + 2] = 0; placeholderData[k + 3] = 255; 
+                } 
+                
+                try {
+                    gl.texImage2D(target, 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, placeholderData);
+                } catch (err) {
+                    console.error(`[createCubemapTexture] Failed to create error placeholder for face ${i}`);
+                }
+            }
         }
 
-        console.log("[createCubemapTexture v4] Returning texture object:", texture);
+        gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
+
+        if (!success) {
+            console.warn("[createCubemapTexture] One or more faces had issues, but texture may still work partially.");
+        } else {
+            console.log("[createCubemapTexture] Cubemap texture created successfully.");
+        }
+
         return texture;
     }
-    // ============================================================== //
-    // ==  END UPDATED createCubemapTexture Method (Attempt 4)      == //
-    // ============================================================== //
-
 
     /**
      * Update the data textures with current shape and material data
@@ -518,20 +543,46 @@ class Renderer {
      * Update camera matrices based on current p5 camera state
      */
     updateCameraMatrices() {
+        const p = this.p;
+        
+        // Special handling for fallback mode - don't rely on WebGL matrices
+        if (this.usesFallback) {
+            // In fallback mode, ensure we have base matrices even if p5's renderer isn't ready
+            if (!this.viewMatrix) {
+                this.viewMatrix = new p5.Matrix();
+            }
+            if (!this.projectionMatrix) {
+                this.projectionMatrix = new p5.Matrix();
+            }
+            
+            // Always ensure we have a valid camera position in fallback mode
+            this.cameraPos = this.cameraPos || p.createVector(
+                CONFIG.camera.defaultPosition[0],
+                CONFIG.camera.defaultPosition[1], 
+                CONFIG.camera.defaultPosition[2]
+            );
+            
+            return; // Skip the rest of the method in fallback mode
+        }
+        
+        // Standard path for non-fallback mode
         // Get camera info from p5's camera system
         const renderer = this.p._renderer;
         
         // Check if renderer and matrices are initialized
         if (!renderer) {
             console.warn("p5 renderer not available for updateCameraMatrices.");
-            return; // Skip matrix update this frame
+            
+            // Initialize default matrices
+            if (!this.viewMatrix) this.viewMatrix = new p5.Matrix();
+            if (!this.projectionMatrix) this.projectionMatrix = new p5.Matrix();
+            return;
         }
         
         // Check specifically for matrices availability
         const matricesAvailable = renderer.uViewMatrix && renderer.uProjMatrix;
         if (!matricesAvailable) {
-            // During startup, matrices might not be initialized yet
-            console.warn("Camera matrices not available yet, using fallback");
+            console.warn("Camera matrices not available yet, using identity matrices");
             
             // Use identity matrices as fallback during initialization
             if (!this.viewMatrix) this.viewMatrix = new p5.Matrix();
@@ -547,11 +598,11 @@ class Renderer {
         this.projectionMatrix = renderer.uProjMatrix.copy();
 
         // Get camera position
-        if (CONFIG.camera.orbitControl && typeof this.p.orbitControl === 'function' && this.viewMatrix) {
+        if (CONFIG.camera.orbitControl && typeof p.orbitControl === 'function' && this.viewMatrix) {
             // When using orbitControl, extract camera position from the inverted view matrix
             try {
                 const viewInv = this.viewMatrix.copy().invert();
-                this.cameraPos = this.p.createVector(
+                this.cameraPos = p.createVector(
                     viewInv.mat4[12],
                     viewInv.mat4[13],
                     viewInv.mat4[14]
@@ -560,7 +611,7 @@ class Renderer {
                 console.warn("Error inverting view matrix for camera position, using default position");
                 // Keep previous position or use default if needed
                 if (!this.cameraPos) {
-                    this.cameraPos = this.p.createVector(
+                    this.cameraPos = p.createVector(
                         CONFIG.camera.defaultPosition[0],
                         CONFIG.camera.defaultPosition[1],
                         CONFIG.camera.defaultPosition[2]
@@ -570,7 +621,7 @@ class Renderer {
         } else if (renderer.camera) {
             // Fallback: Try to get from internal p5 camera if not using orbit control
             const cam = renderer.camera;
-            this.cameraPos = this.p.createVector(cam.eyeX, cam.eyeY, cam.eyeZ);
+            this.cameraPos = p.createVector(cam.eyeX, cam.eyeY, cam.eyeZ);
         }
     }
 
@@ -580,126 +631,402 @@ class Renderer {
     render() {
         const p = this.p;
 
+        // Check if shader is initialized and attempt initialization if needed
+        if (!this.initialized) {
+            // Try to check shader initialization
+            if (!this.checkShaderInitialization()) {
+                // If still not initialized, display a more specific message and use the system background
+                const now = performance.now();
+                if (now - this.lastInitAttempt > this.initRetryDelay) {
+                    this.lastInitAttempt = now;
+                    console.log(`Waiting for shader initialization... (attempt ${this.initializationAttempts + 1}/${this.maxInitAttempts})`);
+                    
+                    // Display a message on screen if shader still isn't ready
+                    p.background(20, 20, 30); // Dark blue background
+                    p.fill(255);
+                    p.textSize(16);
+                    p.textAlign(p.CENTER);
+                    p.text("Initializing shader...", p.width/2, p.height/2);
+                }
+                return; // Skip this frame
+            }
+        }
+
         // Start timing this frame
         const frameStartTime = performance.now();
-
-        // Skip rendering if shader isn't ready or p5's renderer isn't initialized
-        if (!this.shader || !p._renderer || !this.shader._glProgram) {
-            console.log("Shader or renderer not yet fully initialized, skipping render frame");
-            return;
-        }
 
         // Update camera matrices
         this.updateCameraMatrices();
 
-        // Update data textures with current state
-        this.updateDataTextures();
+        // Check if post-processing is enabled (only for advanced rendering)
+        const usePostProcess = this.postProcess && this.postProcess.enabled && !this.usesFallback;
 
-        // Check if post-processing is enabled
-        const usePostProcess = this.postProcess && this.postProcess.enabled;
-
-        // Get the render target (post-process buffer or screen)
-        const renderTarget = usePostProcess ? this.postProcess.beginRender() : null;
-
-        // If using post-processing, set the render target
-        if (renderTarget) {
-            renderTarget.push();
-            renderTarget.shader(this.shader);
+        // Check if we're using fallback rendering
+        if (this.usesFallback && this.fallbackShader) {
+            // FALLBACK RENDERING PATH
+            this.renderFallback();
         } else {
-            // Ensure we reset graphics state before applying shader to main canvas
-            p.resetMatrix();
-            p.noStroke();
-            p.shader(this.shader);
-        }
+            // NORMAL ADVANCED RENDERING PATH
+            // Update data textures with current state
+            if (this.shapeManager && this.shapeManager.getAllShapes && this.shapeManager.getAllShapes().length > 0) {
+                this.updateDataTextures();
+            }
+            
+            // Get the render target (post-process buffer or screen)
+            const renderTarget = usePostProcess ? this.postProcess.beginRender() : null;
 
-        // Set camera uniforms
-        this.shader.setUniform('uCameraPosition', [this.cameraPos.x, this.cameraPos.y, this.cameraPos.z]);
-        if (this.viewMatrix) this.shader.setUniform('uViewMatrix', this.viewMatrix.mat4);
-        if (this.projectionMatrix) this.shader.setUniform('uProjectionMatrix', this.projectionMatrix.mat4);
-        this.shader.setUniform('uFovY', p.radians(CONFIG.camera.fov)); // Pass FOV in radians (vertical fov)
-        this.shader.setUniform('uAspect', p.width / p.height);
-        this.shader.setUniform('uNear', CONFIG.camera.near);
-        this.shader.setUniform('uFar', CONFIG.camera.far);
-
-        // Set scene uniforms
-        this.shader.setUniform('uShapeCount', this.shapeManager.shapes.length);
-        this.shader.setUniform('uLightDirection', this.lightDirection);
-        this.shader.setUniform('uLightColor', this.lightColor.map(c => c * this.lightIntensity));
-        this.shader.setUniform('uAmbientColor', this.ambientColor);
-        this.shader.setUniform('uShadowSoftness', CONFIG.render.shadowSoftness);
-        this.shader.setUniform('uBackgroundColor', CONFIG.render.defaultBackground);
-
-        // Environment mapping
-        const envMapEnabled = this.environmentTexture && this.environmentTexture._tex && CONFIG.render.envMapIntensity > 0;
-        this.shader.setUniform('uEnvMapEnabled', envMapEnabled);
-        this.shader.setUniform('uEnvMapIntensity', CONFIG.render.envMapIntensity);
-
-        // Set time for animations
-        this.shader.setUniform('uTime', p.millis() / 1000.0);
-        this.shader.setUniform('uResolution', [p.width, p.height]); // Pass resolution
-
-        // Bind data textures
-        // The bind method in DataTexture handles both shape and material textures
-        this.shapeDataTexture.bind(this.shader);
-
-        // Bind environment map (Texture Unit 2) - with additional safety checks
-        if (envMapEnabled) {
             try {
-                const gl = p._renderer.GL;
-                if (gl && this.shader._glProgram) {
-                    const uniformLocation = gl.getUniformLocation(this.shader._glProgram, 'uEnvironmentMap');
-                    if (uniformLocation !== null) {
-                        // Activate texture unit 2 for environment map
-                        gl.activeTexture(gl.TEXTURE2);
+                // If using post-processing, set the render target
+                if (renderTarget) {
+                    renderTarget.push();
+                    renderTarget.shader(this.shader);
+                } else {
+                    // Ensure we reset graphics state before applying shader to main canvas
+                    p.resetMatrix();
+                    p.noStroke();
+                    p.shader(this.shader);
+                }
+
+                // Set camera uniforms
+                this.shader.setUniform('uCameraPosition', [this.cameraPos.x, this.cameraPos.y, this.cameraPos.z]);
+                if (this.viewMatrix) this.shader.setUniform('uViewMatrix', this.viewMatrix.mat4);
+                if (this.projectionMatrix) this.shader.setUniform('uProjectionMatrix', this.projectionMatrix.mat4);
+                this.shader.setUniform('uFov', CONFIG.camera.fov);
+                this.shader.setUniform('uAspect', p.width / p.height);
+                this.shader.setUniform('uNear', CONFIG.camera.near);
+                this.shader.setUniform('uFar', CONFIG.camera.far);
+
+                // Set scene uniforms
+                const shapeCount = this.shapeManager ? this.shapeManager.shapes.length : 0;
+                this.shader.setUniform('uShapeCount', shapeCount);
+                this.shader.setUniform('uLightDirection', this.lightDirection);
+                this.shader.setUniform('uLightColor', this.lightColor.map(c => c * this.lightIntensity));
+                this.shader.setUniform('uAmbientColor', this.ambientColor);
+                this.shader.setUniform('uShadowSoftness', CONFIG.render.shadowSoftness);
+                this.shader.setUniform('uBackgroundColor', CONFIG.render.defaultBackground);
+
+                // Environment mapping
+                let envMapEnabled = false;
+                if (this.environmentTexture && this.environmentTexture._tex) {
+                    try {
+                        // Verify the texture is valid
+                        const gl = p._renderer.GL;
                         gl.bindTexture(gl.TEXTURE_CUBE_MAP, this.environmentTexture._tex);
-                        gl.uniform1i(uniformLocation, 2); // Tell sampler to use texture unit 2
+                        gl.bindTexture(gl.TEXTURE_CUBE_MAP, null); // Unbind to test
+                        envMapEnabled = CONFIG.render.envMapIntensity > 0;
+                    } catch (e) {
+                        envMapEnabled = false;
                     }
                 }
-            } catch (e) {
-                console.warn("Error binding environment map:", e);
+                
+                this.shader.setUniform('uEnvMapEnabled', envMapEnabled);
+                this.shader.setUniform('uEnvMapIntensity', CONFIG.render.envMapIntensity);
+
+                // Set time for animations
+                this.shader.setUniform('uTime', p.millis() / 1000.0);
+
+                // Bind data textures
+                if (shapeCount > 0 && this.shapeDataTexture) {
+                    this.shapeDataTexture.bind(this.shader);
+                }
+
+                // Bind environment map 
+                if (envMapEnabled) {
+                    try {
+                        const gl = p._renderer.GL;
+                        if (gl && this.shader._glProgram) {
+                            const uniformLocation = gl.getUniformLocation(this.shader._glProgram, 'uEnvironmentMap');
+                            if (uniformLocation !== null) {
+                                // Activate texture unit 2 for environment map
+                                gl.activeTexture(gl.TEXTURE2);
+                                gl.bindTexture(gl.TEXTURE_CUBE_MAP, this.environmentTexture._tex);
+                                gl.uniform1i(uniformLocation, 2);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn("Error binding environment map:", e);
+                    }
+                }
+
+                // Bind material textures
+                if (this.textureManager) {
+                    this.textureManager.bindTextures(this.shader, 3);
+                }
+
+                // Draw a full-screen quad
+                if (renderTarget) {
+                    renderTarget.rect(0, 0, renderTarget.width, renderTarget.height);
+                    renderTarget.pop();
+                } else {
+                    p.push();
+                    p.resetMatrix();
+                    p.rect(0, 0, p.width, p.height);
+                    p.pop();
+                }
+
+                // Unbind textures
+                if (p._renderer && p._renderer.GL) {
+                    const gl = p._renderer.GL;
+                    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, null);
+                    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, null);
+                    if (envMapEnabled) {
+                        gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
+                    }
+                    // Unbind texture manager units
+                    if (this.textureManager) {
+                        this.textureManager.unbindTextures(3);
+                    }
+                }
+
+                // Apply post-processing
+                if (usePostProcess && this.postProcess) {
+                    this.postProcess.endRender();
+                }
+            } catch (err) {
+                console.error("Error during render:", err);
+                
+                // If we encounter an error during render, try to switch to fallback rendering
+                if (!this.usesFallback) {
+                    console.warn("Switching to fallback rendering due to error");
+                    this.setupFallbackMode();
+                    
+                    // Try fallback rendering immediately
+                    p.resetShader();
+                    this.renderFallback();
+                } else {
+                    // We're already in fallback mode and still having issues
+                    p.resetShader();
+                    p.background(20, 20, 30);
+                    p.fill(255, 0, 0);
+                    p.textSize(16);
+                    p.textAlign(p.CENTER);
+                    p.text("Rendering Error - Cannot display scene", p.width/2, p.height/2);
+                }
             }
         }
-
-        // Bind material textures (starting at texture unit 3)
-        this.textureManager.bindTextures(this.shader, 3); // Pass starting texture unit index
-
-        // Draw a full-screen quad to trigger the fragment shader
-        // Important: Use coordinates relative to the current render target
-        if (renderTarget) {
-            // Coordinates for rect() in p5.Graphics are relative to the graphics buffer
-             renderTarget.rect(0, 0, renderTarget.width, renderTarget.height);
-             renderTarget.pop(); // Restore graphics state if using push/pop
-        } else {
-            // Coordinates for rect() on main canvas are relative to the canvas origin
-            // Ensure it covers the whole screen regardless of matrix transforms
-            p.push(); // Save current state
-            p.resetMatrix(); // Use identity matrix
-            p.rect(0, 0, p.width, p.height); // Draw covering the canvas
-            p.pop(); // Restore previous state
-        }
-
-
-        // Important: Unbind textures to prevent conflicts or unintended state
-        const gl = p._renderer.GL;
-        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, null); // Unbind unit 0
-        gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, null); // Unbind unit 1
-        if (envMapEnabled) {
-             gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_CUBE_MAP, null); // Unbind unit 2 (cubemap)
-        }
-        // Unbind texture manager units (3 onwards)
-        this.textureManager.unbindTextures(3);
-
-        // Apply post-processing if enabled
-        if (usePostProcess) {
-            this.postProcess.endRender();
-        }
-
-        // Reset shader? Maybe not needed if post-process draws over it anyway
-        // p.resetShader();
 
         // Measure frame time
         const frameTime = performance.now() - frameStartTime;
         this.updatePerformanceMetrics(frameTime);
+    }
+    
+    /**
+     * Render the scene using the simple fallback mode
+     * This mode uses p5.js built-in 3D rendering instead of ray marching
+     */
+    renderFallback() {
+        const p = this.p;
+        
+        // Clear the background
+        p.background(20, 20, 30); // Dark blue background
+        
+        // Reset the shader
+        p.resetShader();
+        
+        // Set up camera - critical for stable rendering
+        p.perspective(
+            p.radians(CONFIG.camera.fov), 
+            p.width / p.height, 
+            CONFIG.camera.near, 
+            CONFIG.camera.far
+        );
+        
+        // Set up basic 3D camera position - use our stored camera position
+        const camPos = this.cameraPos;
+        const camLookAt = p.createVector(0, 0, 0); // Look at origin by default
+        const camUp = p.createVector(0, 1, 0);     // Y-up orientation
+        
+        p.camera(
+            camPos.x, camPos.y, camPos.z,   // Camera position
+            camLookAt.x, camLookAt.y, camLookAt.z, // Look at point
+            camUp.x, camUp.y, camUp.z      // Up direction
+        );
+        
+        // Apply p5.js orbit controls if enabled
+        if (CONFIG.camera.orbitControl && typeof p.orbitControl === 'function') {
+            p.orbitControl();
+        }
+        
+        // Set up basic lights
+        p.ambientLight(
+            this.ambientColor[0] * 255,
+            this.ambientColor[1] * 255,
+            this.ambientColor[2] * 255
+        );
+        
+        // Add directional light
+        const dirX = -this.lightDirection[0];
+        const dirY = -this.lightDirection[1];
+        const dirZ = -this.lightDirection[2];
+        p.directionalLight(
+            this.lightColor[0] * 255 * this.lightIntensity,
+            this.lightColor[1] * 255 * this.lightIntensity,
+            this.lightColor[2] * 255 * this.lightIntensity,
+            dirX, dirY, dirZ
+        );
+        
+        // Draw a grid for reference
+        p.push();
+        p.noStroke();
+        p.fill(50);
+        p.translate(0, 0, 0);
+        p.rotateX(Math.PI/2);
+        p.plane(100, 100);
+        p.pop();
+        
+        // Render all shapes using p5's built-in 3D primitives
+        if (this.shapeManager && this.shapeManager.shapes) {
+            const shapes = this.shapeManager.shapes;
+            for (const shape of shapes) {
+                this.renderFallbackShape(shape);
+            }
+        }
+        
+        // Show "Fallback Mode" indicator (use HUD style rendering)
+        p.push();
+        p.resetMatrix(); // Reset to screen coordinates
+        p.ortho(0, p.width, 0, p.height, -1, 1);
+        p.noLights();
+        p.fill(255, 255, 0);
+        p.textSize(16);
+        p.textAlign(p.LEFT, p.TOP);
+        p.text("FALLBACK RENDERING MODE", 10, 10);
+        
+        // Add a message to help users understand
+        p.fill(200);
+        p.textSize(14);
+        p.text("WebGL ray marching shader failed to initialize.", 10, 30);
+        p.text("Using basic 3D rendering instead.", 10, 48);
+        p.pop();
+    }
+    
+    /**
+     * Render a single shape in fallback mode using p5's built-in 3D primitives
+     * @param {Shape} shape - The shape to render
+     */
+    renderFallbackShape(shape) {
+        const p = this.p;
+        
+        // Skip invalid shapes
+        if (!shape || shape.type === undefined) return;
+        
+        // Get material for this shape
+        const material = this.materialLibrary.getMaterial(shape.materialId);
+        
+        p.push(); // Save state
+        
+        // Apply position and rotation
+        p.translate(shape.position.x, shape.position.y, shape.position.z);
+        
+        // Apply rotation if present
+        if (shape.orientation && shape.orientation.length === 4) {
+            const q = shape.orientation;
+            // Convert quaternion to axis-angle
+            const angle = 2 * Math.acos(q[3]);
+            let axis = [q[0], q[1], q[2]];
+            const sinHalfAngle = Math.sin(angle/2);
+            
+            if (sinHalfAngle !== 0) {
+                axis = axis.map(v => v / sinHalfAngle);
+            }
+            
+            // Apply rotation
+            if (angle !== 0) {
+                p.rotate(angle, axis[0], axis[1], axis[2]);
+            }
+        }
+        
+        // Set material properties
+        if (material) {
+            const albedo = material.albedo || [0.8, 0.8, 0.8];
+            const emissive = material.emissive || [0, 0, 0];
+            
+            // Set fill color based on albedo and emissive
+            p.fill(
+                (albedo[0] * 255) + (emissive[0] * 255),
+                (albedo[1] * 255) + (emissive[1] * 255),
+                (albedo[2] * 255) + (emissive[2] * 255)
+            );
+            
+            // Set specular based on roughness
+            if (material.roughness !== undefined) {
+                p.specularMaterial(255 * (1 - material.roughness));
+            }
+            
+            // Set shininess based on metallic
+            if (material.metallic !== undefined) {
+                p.shininess(material.metallic * 100);
+            }
+        } else {
+            // Default material
+            p.fill(200);
+        }
+        
+        // Apply slight stroke to see shape edges
+        p.stroke(0);
+        p.strokeWeight(0.5);
+        
+        // Get size (handle both scalar and vector sizes)
+        let sizeX = shape.size;
+        let sizeY = shape.size;
+        let sizeZ = shape.size;
+        
+        if (Array.isArray(shape.size)) {
+            sizeX = shape.size[0] || 1;
+            sizeY = shape.size[1] || 1;
+            sizeZ = shape.size[2] || 1;
+        }
+        
+        // Draw appropriate shape based on type
+        switch (shape.type) {
+            case 0: // Sphere
+                p.sphere(sizeX);
+                break;
+                
+            case 1: // Box
+                p.box(sizeX * 2, sizeY * 2, sizeZ * 2);
+                break;
+                
+            case 2: // Torus
+                p.torus(sizeX * 1.5, sizeX * 0.5);
+                break;
+                
+            case 3: // Cylinder
+                p.cylinder(sizeX, sizeZ * 2);
+                break;
+                
+            case 4: // Cone
+                p.cone(sizeX, sizeZ * 2);
+                break;
+                
+            case 5: // Capsule (approximated as cylinder with spheres)
+                // Draw cylinder body
+                p.cylinder(sizeX, sizeZ * 2);
+                
+                // Draw end caps as spheres
+                p.push();
+                p.translate(0, sizeZ, 0);
+                p.sphere(sizeX);
+                p.pop();
+                
+                p.push();
+                p.translate(0, -sizeZ, 0);
+                p.sphere(sizeX);
+                p.pop();
+                break;
+                
+            case 6: // Plane
+                p.rotateX(Math.PI/2);
+                p.plane(sizeX * 100, sizeZ * 100);
+                break;
+                
+            default:
+                // Unknown shape type
+                p.sphere(sizeX); // Default to sphere
+                break;
+        }
+        
+        p.pop(); // Restore state
     }
 
     /**
@@ -777,5 +1104,68 @@ class Renderer {
              this.postProcess = null;
         }
          // Shaders are managed by p5, might not need explicit deletion unless created raw
+    }
+
+    /**
+     * Create a simple fallback shader when the main shader fails to compile
+     */
+    createFallbackShader() {
+        console.log("Creating fallback shader for basic rendering...");
+        try {
+            // Simple vertex shader
+            const fallbackVS = `
+                attribute vec3 aPosition;
+                attribute vec4 aVertexColor;
+                
+                uniform mat4 uModelViewMatrix;
+                uniform mat4 uProjectionMatrix;
+                
+                varying vec4 vColor;
+                
+                void main() {
+                    vColor = aVertexColor;
+                    gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
+                }
+            `;
+            
+            // Simple fragment shader
+            const fallbackFS = `
+                #ifdef GL_ES
+                precision mediump float;
+                #endif
+                
+                varying vec4 vColor;
+                
+                void main() {
+                    gl_FragColor = vColor;
+                }
+            `;
+            
+            // Create fallback shader
+            const fallbackShader = this.p.createShader(fallbackVS, fallbackFS);
+            console.log("✓ Fallback shader created successfully");
+            return fallbackShader;
+        } catch (err) {
+            console.error("Failed to create even the fallback shader:", err);
+            return null;
+        }
+    }
+    
+    /**
+     * Set up fallback rendering mode
+     */
+    setupFallbackMode() {
+        console.log("Setting up fallback rendering mode...");
+        this.usesFallback = true;
+        
+        // Create a basic fallback shader
+        this.fallbackShader = this.createFallbackShader();
+        
+        // Flag that initialization is "complete" (with fallback)
+        this.initializationAttempts = this.maxInitAttempts;
+        this.initialized = true;
+        
+        console.log("Fallback rendering mode is now active");
+        return true;
     }
 }
