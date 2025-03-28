@@ -3,7 +3,7 @@
  * Main entry point that initializes the application and ties all modules together
  */
 
-// Global variables
+// Sketch scope variables (previously global)
 let shapeManager;
 let materialLibrary;
 let renderer;
@@ -13,35 +13,11 @@ let audio;
 let ui;
 let lastFrameTime = 0;
 
-// p5.js setup function
-function setup() {
-    // Create canvas with WebGL mode
-    const canvas = createCanvas(
-        CONFIG.render.width, 
-        CONFIG.render.height, 
-        WEBGL
-    );
-    canvas.parent('sketch-holder');
-    
-    // Set pixel density to 1 for performance
-    pixelDensity(1);
-    
-    // Enable orbit controls for camera
-    if (CONFIG.camera.orbitControl) {
-        orbitControl();
-    }
-    
-    // Initialize systems
-    initializeSystems();
-    
-    // Create sound assets folder
-    createAssetsFolders();
-}
-
 /**
  * Initialize all systems and modules
+ * @param {p5} p - The p5 instance
  */
-function initializeSystems() {
+function initializeSystems(p) {
     // Create material library
     materialLibrary = new MaterialLibrary();
     
@@ -52,57 +28,52 @@ function initializeSystems() {
     physics = new PhysicsSystem(shapeManager);
     
     // Create renderer
-    renderer = new Renderer(
-        window, 
-        shapeManager, 
-        materialLibrary
-    );
+    // Pass p instance to renderer if needed, assuming it uses p5 functions
+    renderer = new Renderer(p, shapeManager, 
+ materialLibrary
+);
     
     // Create interaction handler - Pass the p5 instance correctly
-    const p5Instance = {
-        createVector: createVector,
-        mouseX: mouseX,
-        mouseY: mouseY,
-        Vector: p5.Vector
-    };
     
     interaction = new InteractionHandler(
-        p5Instance, 
-        shapeManager,
-        physics
-    );
+p, shapeManager,
+ physics );
     
     // Create audio system
+    // Create audio system
+    // Pass p instance to AudioSystem if needed
     audio = new AudioSystem(
-        window,
+        p, // Assuming AudioSystem might need p5 instance
         shapeManager,
         materialLibrary,
         physics
     );
-    
+
     // Create UI manager
     ui = new UIManager(
         window,
+        p, // Pass p instance if UI needs it
         shapeManager,
         materialLibrary,
         interaction,
         physics,
         audio,
-        renderer
+       renderer
     );
     
     // Create some initial shapes
-    createInitialScene();
+    createInitialScene(p);
 }
 
 /**
  * Create initial scene with some shapes
+ * @param {p5} p - The p5 instance
  */
-function createInitialScene() {
+function createInitialScene(p) {
     // Add ground plane shape
     const groundPlane = new Shape({
         type: 6, // Plane
-        position: createVector(0, 0, 0),
+        position: p.createVector(0, 0, 0),
         materialId: materialLibrary.getMaterial(0).id, // Default material
         mass: 0 // Static
     });
@@ -113,7 +84,7 @@ function createInitialScene() {
     // Sphere
     interaction.spawnShape(
         0, // Sphere
-        createVector(-3, 5, 0),
+        p.createVector(-3, 5, 0),
         1.0,
         materialLibrary.getMaterial(1).id // Metal
     );
@@ -121,7 +92,7 @@ function createInitialScene() {
     // Box
     interaction.spawnShape(
         1, // Box
-        createVector(0, 8, 0),
+        p.createVector(0, 8, 0),
         1.2,
         materialLibrary.getMaterial(2).id // Glass
     );
@@ -129,7 +100,7 @@ function createInitialScene() {
     // Torus
     interaction.spawnShape(
         2, // Torus
-        createVector(3, 3, -2),
+        p.createVector(3, 3, -2),
         1.5,
         materialLibrary.getMaterial(4).id // Emissive
     );
@@ -137,7 +108,7 @@ function createInitialScene() {
     // Cone
     interaction.spawnShape(
         4, // Cone
-        createVector(-2, 7, -3),
+        p.createVector(-2, 7, -3),
         1.3,
         materialLibrary.getMaterial(3).id // Wood
     );
@@ -148,6 +119,7 @@ function createInitialScene() {
  * In a real project, these would be provided ahead of time
  */
 function createAssetsFolders() {
+    // This function likely doesn't need p5 instance
     try {
         // This is a placeholder function
         // In an actual deployment, the assets folder would be created manually
@@ -157,81 +129,138 @@ function createAssetsFolders() {
     }
 }
 
-/**
- * Handle window resizing
- */
-function windowResized() {
-    // Update canvas size
-    resizeCanvas(windowWidth, windowHeight);
-    
-    // Update config
-    CONFIG.render.width = windowWidth;
-    CONFIG.render.height = windowHeight;
-    
-    // Update renderer (which handles post-processing buffers)
-    if (renderer) {
-        renderer.handleWindowResize();
-    }
-}
 
-/**
- * p5.js draw function - called every frame
- */
-function draw() {
-    // Calculate delta time
-    const currentTime = millis() / 1000;
-    const deltaTime = currentTime - lastFrameTime;
-    lastFrameTime = currentTime;
+// p5.js instance mode wrapper
+const sketch = (p) => {
+
+    // p5.js setup function
+    p.setup = () => {
+        // Create canvas with WebGL mode
+        const canvas = p.createCanvas(
+            CONFIG.render.width,
+            CONFIG.render.height,
+            p.WEBGL // Use p.WEBGL
+        );
+        canvas.parent('sketch-holder');
+
+        // Set pixel density to 1 for performance
+        p.pixelDensity(1);
+
+        // Enable orbit controls for camera - Note: orbitControl might need adjustment for instance mode
+        // If orbitControl() is a global function added by a library, it might still work.
+        // If it's part of p5, it might be p.orbitControl() or require a different setup.
+        // For now, assuming it's handled globally or via a library.
+        if (CONFIG.camera.orbitControl) {
+             // Check if orbitControl is available globally or on p
+            if (typeof orbitControl === 'function') {
+                orbitControl(); // Try global first
+            } else if (typeof p.orbitControl === 'function') {
+                 p.orbitControl(); // Try instance method
+            } else {
+                console.warn("orbitControl function not found. Camera controls may not work.");
+            }
+        }
+
+        // Initialize systems, passing the p5 instance
+        initializeSystems(p);
+
+        // Create sound assets folder (doesn't need p)
+        createAssetsFolders();
+
+        lastFrameTime = p.millis() / 1000; // Initialize lastFrameTime
+    };
+
+    /**
+     * Handle window resizing
+     */
+    p.windowResized = () => {
+        // Update canvas size
+        p.resizeCanvas(p.windowWidth, p.windowHeight);
     
+        // Update config
+        // (assuming CONFIG is global or accessible)
+        CONFIG.render.width = p.windowWidth;
+        CONFIG.render.height = p.windowHeight;
+    
+        // Update renderer (which handles post-processing buffers)
+        if (renderer && typeof renderer.handleWindowResize === 'function') {
+            renderer.handleWindowResize();
+        }
+    };
+
+    /**
+     * p5.js draw function - called every frame
+     */
+    p.draw = () => {
+        // Calculate delta time
+        const currentTime = p.millis() / 1000;
+        const deltaTime = currentTime - lastFrameTime;
+        lastFrameTime = currentTime;
+        
     // Clear background
-    background(0);
+        p.background(0);
     
-    // Update physics
-    physics.update(deltaTime);
+        // Update physics
+        // (doesn't need p)
+        if (physics) physics.update(deltaTime);
     
-    // Render scene
-    renderer.render();
+        // Render scene
+        // (assuming renderer uses p internally if needed)
+        if (renderer) renderer.render();
     
-    // Update UI
-    ui.update();
-}
+        // Update UI
 
-/**
- * Handle mouse pressed event
- */
-function mousePressed(event) {
-    if (interaction && typeof interaction.mousePress === 'function') {
-        return interaction.mousePress(event);
-    }
-    return true;
-}
+        // (doesn't need p)
+        if (ui) ui.update();
+    };
 
-/**
+    /**
+     * Handle mouse pressed event
+     */
+    p.mousePressed = (event) => {
+        // Pass event and potentially p instance if needed by interaction handler
+        if (interaction && typeof interaction.mousePress === 'function') {
+            // interaction.mousePress might need adjustment to accept p if it uses p5 functions directly
+            return interaction.mousePress(event);
+       } 
+        return true;
+        // Prevent default browser behavior
+    };
+
+    /**    
  * Handle mouse dragged event
- */
-function mouseDragged(event) {
-    if (interaction && typeof interaction.mouseMove === 'function') {
-        return interaction.mouseMove(event);
-    }
-    return true;
-}
+     */
+    p.mouseDragged = (event) => {
+        if (interaction && typeof interaction.mouseMove === 'function') {
+            // interaction.mouseMove might need adjustment
+            return interaction.mouseMove(event);
+        }
+        return true;
+    };
 
-/**
- * Handle mouse released event
- */
-function mouseReleased(event) {
-    if (interaction && typeof interaction.mouseRelease === 'function') {
-        return interaction.mouseRelease(event);
-    }
-    return true;
-}
+    /**
+     * Handle mouse released event
+     */
+    p.mouseReleased = (event) => {
+        if (interaction && typeof interaction.mouseRelease === 'function') {
+            // interaction.mouseRelease might need adjustment
+            return interaction.mouseRelease(event);
+        }
+        return true;
+    };
 
-/**
+    /**    
  * Handle key press events
- */
-function keyPressed(event) {
-    if (interaction && typeof interaction.keyPress === 'function') {
-        return interaction.keyPress(event);
-    }
-    return true;
-}
+     */
+    p.keyPressed = (event) => {
+        if (interaction && typeof interaction.keyPress === 'function') {
+            // interaction.keyPress might need adjustment
+            return interaction.keyPress(event);
+       } 
+        return true;
+    };
+
+}; // End of sketch function wrapper
+
+// Start p5.js in instance mode, attaching to the 'sketch-holder' div
+new p5(sketch, 'sketch-holder');

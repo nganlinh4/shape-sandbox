@@ -153,8 +153,14 @@ class UIManager {
         const materialOptions = {};
         this.materialLibrary.getAllMaterials().forEach(material => {
             // Use first word of material type as name
-            const name = material.soundType.charAt(0).toUpperCase() + material.soundType.slice(1);
-            materialOptions[name] = material.id;
+            // Check if soundType is a valid string before processing
+            if (material && typeof material.soundType === 'string' && material.soundType.length > 0) {
+                const name = material.soundType.charAt(0).toUpperCase() + material.soundType.slice(1);
+                materialOptions[name] = material.id;
+            } else {
+                // Log a warning if soundType is missing or invalid
+                console.warn(`Material with id ${material?.id || 'unknown'} has invalid or missing soundType. Skipping for UI dropdown.`);
+            }
         });
         
         tab.addInput(this.params.shape, 'material', {

@@ -40,7 +40,10 @@ class AudioSystem {
         
         // Initialize if enabled
         if (this.isEnabled) {
-            this.init();
+            // Delay init slightly to ensure p5.sound has attached to the p instance
+            setTimeout(() => {
+                this.init();
+            }, 0);
         }
     }
     
