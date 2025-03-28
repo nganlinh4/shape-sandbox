@@ -38,42 +38,53 @@ class AudioSystem {
         this.isEnabled = CONFIG.audio.enabled;
         this.isInitialized = false;
         
-        // Initialize if enabled
-        if (this.isEnabled) {
-            // Delay init slightly to ensure p5.sound has attached to the p instance
-            setTimeout(() => {
-                this.init();
-            }, 0);
-        }
+        // Initialization will be triggered by user interaction
     }
     
     /**
      * Initialize the audio system
      */
     init() {
-        // Check if p5.sound is available
-        if (!this.p.loadSound) {
-            console.warn("p5.sound not available. Audio disabled.");
+        // Revert: Contains sound loading/generation and listener setup.
+        // Should be called AFTER user interaction.
+        
+        if (this.isInitialized || !this.isEnabled) return; // Prevent multiple initializations or if disabled
+
+        console.log("Attempting AudioSystem initialization...");
+
+        // Check if p5.sound is available AND if audio context is running
+        const audioContext = this.p.getAudioContext();
+        if (!this.p.loadSound || !audioContext || audioContext.state !== 'running') {
+            console.warn(`p5.sound not ready or AudioContext not running (state: ${audioContext?.state}). Audio disabled.`);
             this.isEnabled = false;
             return;
         }
         
-        // Load sound effects
-        this.loadSounds();
+        // Load sound effects (synthesis still commented out)
+        try {
+            this.loadSounds();
+        } catch (err) {
+            console.error("Error during loadSounds execution:", err);
+            this.isEnabled = false; // Disable audio if loading fails synchronously
+            // Note: This might not catch the async promise rejection, but worth trying.
+            return; 
+        }
         
         // If no sounds were loaded successfully, generate synthetic sounds
         const hasAnySounds = Object.values(this.sounds.impacts).some(arr => arr.length > 0);
-        if (!hasAnySounds) {
-            console.log("No sound files loaded. Generating synthetic sounds...");
-            // Create a sound synthesizer to generate procedural sounds
-            const synth = new SoundSynthesizer(this.p);
-            synth.generateSounds(this.sounds);
-        }
+        // Temporarily disable synthesizer to isolate the error
+        // if (!hasAnySounds) {
+        //     console.log("No sound files loaded. Generating synthetic sounds...");
+        //     // Create a sound synthesizer to generate procedural sounds
+        //     const synth = new SoundSynthesizer(this.p);
+        //     synth.generateSounds(this.sounds);
+        // }
         
         // Add collision listeners to physics bodies
         this.setupCollisionListeners();
         
         this.isInitialized = true;
+        console.log("AudioSystem initialized (listeners set up).");
     }
     
     /**
@@ -91,7 +102,9 @@ class AudioSystem {
         };
         
         // Create placeholder sounds first - they'll be replaced by loaded sounds if available
-        this.createPlaceholderSounds();
+        // Temporarily disable placeholder sounds to isolate the error
+        // this.createPlaceholderSounds();
+ 
         
         // Track load failures to report once at the end rather than spamming console
         let loadFailures = 0;
@@ -99,6 +112,14 @@ class AudioSystem {
         // Helper to safely load a sound file with fallback
         const safeLoadSound = (path) => {
             try {
+                // Final check: Ensure context is running right before loadSound
+                const currentAudioContext = this.p.getAudioContext();
+                if (!currentAudioContext || currentAudioContext.state !== 'running') {
+                    console.warn(`AudioContext not running (state: ${currentAudioContext?.state}) immediately before loadSound for: ${path}`);
+                    loadFailures++;
+                    return null;
+                }
+
                 return this.p.loadSound(
                     path,
                     // Success callback - nothing needed

@@ -286,7 +286,12 @@ class SoundSynthesizer {
         const numSamples = Math.floor(duration * sampleRate);
         
         // Create an audio buffer for the ambient sound
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        // Use p5's managed AudioContext
+        const audioContext = this.p.getAudioContext();
+        if (!audioContext) {
+            console.warn("p5 AudioContext not available for synthesizer.");
+            return null; // Cannot generate sound without context
+        }
         const buffer = audioContext.createBuffer(channels, numSamples, sampleRate);
         const data = buffer.getChannelData(0); // Get data for first channel
         
@@ -325,10 +330,11 @@ class SoundSynthesizer {
             isPlaying: false,
             
             // Methods to match p5.sound API
-            play: function() {
+            // Use arrow function to retain 'this' context of SoundSynthesizer
+            play: () => { 
                 if (this.isPlaying) this.stop();
                 
-                const audioContext = this.getAudioContext();
+                // Access the audioContext captured from the outer scope
                 this.sourceNode = audioContext.createBufferSource();
                 this.sourceNode.buffer = this.buffer;
                 
@@ -343,33 +349,29 @@ class SoundSynthesizer {
                 this.isPlaying = true;
                 
                 // Schedule next loop
-                const self = this;
                 setTimeout(() => {
-                    if (self.isPlaying) self.play();
+                    // Inside setTimeout, 'this' refers to the ambientSound object itself
+                    if (ambientSound.isPlaying) ambientSound.play() ;
                 }, duration * 900); // Slightly less than duration to avoid gaps
             },
             
-            loop: function() {
+            loop: () => { // Arrow function
                 this.play();
             },
             
-            stop: function() {
+            stop: () => { // Arrow function
                 if (this.sourceNode && this.isPlaying) {
                     this.sourceNode.stop();
                     this.isPlaying = false;
                 }
             },
             
-            setVolume: function(vol) {
+            setVolume: (vol) => { // Arrow function
                 if (this.gainNode) {
                     this.gainNode.gain.value = vol;
                 }
             },
-            
-            // Helper to get audio context
-            getAudioContext: function() {
-                return new (window.AudioContext || window.webkitAudioContext)();
-            }
+            // Removed getAudioContext
         };
         
         return ambientSound;

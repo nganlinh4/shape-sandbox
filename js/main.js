@@ -218,6 +218,17 @@ const sketch = (p) => {
      * Handle mouse pressed event
      */
     p.mousePressed = (event) => {
+    // Attempt to initialize audio on first user interaction
+    if (audio && typeof audio.init === 'function' && !audio.isInitialized) {
+        try {
+            // p5 implicitly handles userStartAudio on interaction if context is suspended
+            audio.init(); 
+        } catch (err) {
+            console.error("Failed to initialize AudioSystem:", err);
+            if (audio) audio.isEnabled = false; // Ensure audio is marked as disabled
+        }
+    }
+
         // Pass event and potentially p instance if needed by interaction handler
         if (interaction && typeof interaction.mousePress === 'function') {
             // interaction.mousePress might need adjustment to accept p if it uses p5 functions directly
@@ -263,4 +274,21 @@ const sketch = (p) => {
 }; // End of sketch function wrapper
 
 // Start p5.js in instance mode, attaching to the 'sketch-holder' div
-new p5(sketch, 'sketch-holder');
+const app = new p5(sketch, 'sketch-holder');
+
+// Global handler for the specific p5.sound unhandled promise rejection
+window.addEventListener('unhandledrejection', function(event) {
+    const reason = event.reason;
+    // Check specifically for the p5.sound 'addModule' TypeError
+    if (reason instanceof TypeError && 
+        reason.message.includes('Cannot read properties of undefined') && 
+        reason.message.includes('addModule') &&
+        reason.stack && reason.stack.includes('p5.sound')) 
+    {
+        console.warn("p5.sound initialization failed asynchronously (addModule error). Audio system should be disabled.");
+        
+        // Prevent the default browser handling for *this specific error* 
+        // to avoid flooding the console. Other errors will log normally.
+        event.preventDefault(); 
+    }
+});
