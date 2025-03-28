@@ -42,6 +42,33 @@ class DataTexture {
             renderer.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
             renderer.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
         };
+        
+        // Set the willReadFrequently attribute for Canvas contexts
+        if (this.materialTexture && this.materialTexture.canvas) {
+            try {
+                const origContext = this.materialTexture.canvas.getContext('2d');
+                if (origContext) {
+                    // Create a new context with willReadFrequently set to true
+                    const newContext = this.materialTexture.canvas.getContext('2d', { willReadFrequently: true });
+                    console.log("Set willReadFrequently=true for materialTexture canvas");
+                }
+            } catch (e) {
+                console.warn("Could not optimize materialTexture canvas:", e);
+            }
+        }
+        
+        if (this.shapeTexture && this.shapeTexture.canvas) {
+            try {
+                const origContext = this.shapeTexture.canvas.getContext('2d');
+                if (origContext) {
+                    // Create a new context with willReadFrequently set to true
+                    const newContext = this.shapeTexture.canvas.getContext('2d', { willReadFrequently: true });
+                    console.log("Set willReadFrequently=true for shapeTexture canvas");
+                }
+            } catch (e) {
+                console.warn("Could not optimize shapeTexture canvas:", e);
+            }
+        }
     }
     
     /**

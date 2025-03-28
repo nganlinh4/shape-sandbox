@@ -12,6 +12,7 @@ let interaction;
 let audio;
 let ui;
 let lastFrameTime = 0;
+let defaultFont; // Global font variable
 
 /**
  * Initialize all systems and modules
@@ -170,6 +171,20 @@ const sketch = (p) => {
     const webglSupported = checkWebGLSupport();
     console.log("WebGL supported:", webglSupported);
 
+    /**
+     * p5.js preload function - load assets before setup
+     */
+    p.preload = () => {
+        // Load a default font for WebGL text
+        console.log("Loading default font...");
+        try {
+            defaultFont = p.loadFont('https://cdnjs.cloudflare.com/ajax/libs/topcoat/0.8.0/font/SourceSansPro-Regular.otf');
+            console.log("Font loaded successfully");
+        } catch (e) {
+            console.error("Error loading font:", e);
+        }
+    };
+
     // p5.js setup function
     p.setup = () => {
         console.log("Starting p5.js setup...");
@@ -188,6 +203,12 @@ const sketch = (p) => {
             // Set pixel density to 1 for performance
             p.pixelDensity(1);
             console.log("Pixel density set to 1");
+
+            // Set the font for WebGL text rendering
+            if (defaultFont) {
+                p.textFont(defaultFont);
+                console.log("Set default font for text rendering");
+            }
         } catch (e) {
             console.error("Error creating canvas:", e);
         }

@@ -75,19 +75,13 @@ class Renderer {
      * Create data textures for shapes and materials
      */
     createDataTextures() {
-        // Create shape data texture (4 rows per shape, maximum of CONFIG.shapes.maxCount shapes)
-        this.shapeDataTexture = new DataTexture(
-            this.p._renderer,
-            4, // 4 pixels per shape: [position+id, rotation, size+type, materialId+reserved]
-            CONFIG.shapes.maxCount
-        );
-
-        // Create material data texture (5 rows per material to accommodate texture mapping parameters)
-        this.materialDataTexture = new DataTexture(
-            this.p._renderer,
-            5, // 5 pixels per material: [albedo+metallic, roughness+emissiveFactor+ior+flags, emissive+reserved, textureIndices, textureScale+Offset]
-            32 // Support up to 32 materials
-        );
+        // Create shape data texture manager
+        this.shapeDataTexture = new DataTexture(this.p);
+        // Initialize right away
+        this.shapeDataTexture.init();
+        
+        // Create material data texture manager - using the same texture manager
+        this.materialDataTexture = this.shapeDataTexture;
     }
 
     /**
@@ -514,10 +508,10 @@ class Renderer {
      */
     updateDataTextures() {
         // Update shape data texture
-        this.shapeDataTexture.packShapeData(this.shapeManager.getAllShapes());
-
+        this.shapeDataTexture.updateShapeTexture(this.shapeManager.getAllShapes());
+        
         // Update material data texture
-        this.materialDataTexture.packMaterialData(this.materialLibrary.getAllMaterials());
+        this.shapeDataTexture.updateMaterialTexture(this.materialLibrary.getAllMaterials());
     }
 
     /**
@@ -526,11 +520,22 @@ class Renderer {
     updateCameraMatrices() {
         // Get camera info from p5's camera system
         const renderer = this.p._renderer;
-        if (!renderer || !renderer.uViewMatrix || !renderer.uProjMatrix) {
-            console.error("p5 renderer or matrices not available for updateCameraMatrices.");
-            // Use identity matrices as fallback? Might cause issues.
-            this.viewMatrix = new p5.Matrix(); // Identity
-            this.projectionMatrix = new p5.Matrix(); // Identity
+        
+        // Check if renderer and matrices are initialized
+        if (!renderer) {
+            console.warn("p5 renderer not available for updateCameraMatrices.");
+            return; // Skip matrix update this frame
+        }
+        
+        // Check specifically for matrices availability
+        const matricesAvailable = renderer.uViewMatrix && renderer.uProjMatrix;
+        if (!matricesAvailable) {
+            // During startup, matrices might not be initialized yet
+            console.warn("Camera matrices not available yet, using fallback");
+            
+            // Use identity matrices as fallback during initialization
+            if (!this.viewMatrix) this.viewMatrix = new p5.Matrix();
+            if (!this.projectionMatrix) this.projectionMatrix = new p5.Matrix();
             return;
         }
 
@@ -552,18 +557,20 @@ class Renderer {
                     viewInv.mat4[14]
                 );
             } catch (e) {
-                 console.error("Error inverting view matrix for camera position:", e);
-                 // Keep previous position as fallback
+                console.warn("Error inverting view matrix for camera position, using default position");
+                // Keep previous position or use default if needed
+                if (!this.cameraPos) {
+                    this.cameraPos = this.p.createVector(
+                        CONFIG.camera.defaultPosition[0],
+                        CONFIG.camera.defaultPosition[1],
+                        CONFIG.camera.defaultPosition[2]
+                    );
+                }
             }
-        } else if (this.p._renderer && this.p._renderer.camera) {
-             // Fallback: Try to get from internal p5 camera if not using orbit control
-             // This might be less reliable or change between p5 versions
-             const cam = this.p._renderer.camera;
-             this.cameraPos = this.p.createVector(cam.eyeX, cam.eyeY, cam.eyeZ);
-        } else {
-             // Absolute fallback if other methods fail
-              console.warn("Could not reliably determine camera position. Using default/last known.");
-              // Keep this.cameraPos as it is
+        } else if (renderer.camera) {
+            // Fallback: Try to get from internal p5 camera if not using orbit control
+            const cam = renderer.camera;
+            this.cameraPos = this.p.createVector(cam.eyeX, cam.eyeY, cam.eyeZ);
         }
     }
 
@@ -575,6 +582,12 @@ class Renderer {
 
         // Start timing this frame
         const frameStartTime = performance.now();
+
+        // Skip rendering if shader isn't ready or p5's renderer isn't initialized
+        if (!this.shader || !p._renderer || !this.shader._glProgram) {
+            console.log("Shader or renderer not yet fully initialized, skipping render frame");
+            return;
+        }
 
         // Update camera matrices
         this.updateCameraMatrices();
@@ -625,23 +638,25 @@ class Renderer {
         this.shader.setUniform('uTime', p.millis() / 1000.0);
         this.shader.setUniform('uResolution', [p.width, p.height]); // Pass resolution
 
-
         // Bind data textures
-        this.shapeDataTexture.bind('uShapeData', 0, this.shader);
-        this.materialDataTexture.bind('uMaterialData', 1, this.shader);
+        // The bind method in DataTexture handles both shape and material textures
+        this.shapeDataTexture.bind(this.shader);
 
-        // Bind environment map (Texture Unit 2)
+        // Bind environment map (Texture Unit 2) - with additional safety checks
         if (envMapEnabled) {
-            const gl = p._renderer.GL;
-            const uniformLocation = gl.getUniformLocation(this.shader._glProgram, 'uEnvironmentMap');
-
-            if (uniformLocation !== null) {
-                // Activate texture unit 2 for environment map
-                gl.activeTexture(gl.TEXTURE2);
-                gl.bindTexture(gl.TEXTURE_CUBE_MAP, this.environmentTexture._tex);
-                gl.uniform1i(uniformLocation, 2); // Tell sampler to use texture unit 2
-            } else {
-                // console.warn("uEnvironmentMap uniform not found in shader.");
+            try {
+                const gl = p._renderer.GL;
+                if (gl && this.shader._glProgram) {
+                    const uniformLocation = gl.getUniformLocation(this.shader._glProgram, 'uEnvironmentMap');
+                    if (uniformLocation !== null) {
+                        // Activate texture unit 2 for environment map
+                        gl.activeTexture(gl.TEXTURE2);
+                        gl.bindTexture(gl.TEXTURE_CUBE_MAP, this.environmentTexture._tex);
+                        gl.uniform1i(uniformLocation, 2); // Tell sampler to use texture unit 2
+                    }
+                }
+            } catch (e) {
+                console.warn("Error binding environment map:", e);
             }
         }
 

@@ -55,7 +55,17 @@ class Shape {
         
         // Update position from physics
         const pos = this.physicsBody.position;
-        this.position.set(pos.x, pos.y, pos.z);
+        
+        // Handle different position object types
+        if (typeof this.position.set === 'function') {
+            // If position has a set method (p5.Vector), use it
+            this.position.set(pos.x, pos.y, pos.z);
+        } else {
+            // For plain objects, update properties directly
+            this.position.x = pos.x;
+            this.position.y = pos.y;
+            this.position.z = pos.z;
+        }
         
         // Update orientation from physics
         const quat = this.physicsBody.quaternion;
