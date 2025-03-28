@@ -58,6 +58,15 @@ class AudioSystem {
         // Load sound effects
         this.loadSounds();
         
+        // If no sounds were loaded successfully, generate synthetic sounds
+        const hasAnySounds = Object.values(this.sounds.impacts).some(arr => arr.length > 0);
+        if (!hasAnySounds) {
+            console.log("No sound files loaded. Generating synthetic sounds...");
+            // Create a sound synthesizer to generate procedural sounds
+            const synth = new SoundSynthesizer(this.p);
+            synth.generateSounds(this.sounds);
+        }
+        
         // Add collision listeners to physics bodies
         this.setupCollisionListeners();
         
@@ -68,46 +77,64 @@ class AudioSystem {
      * Load sound effects
      */
     loadSounds() {
-        try {
-            // Load metal impact sounds
-            this.sounds.impacts.metal = [
-                this.p.loadSound('assets/sounds/metal_impact_1.mp3'),
-                this.p.loadSound('assets/sounds/metal_impact_2.mp3')
-            ];
-            
-            // Load wood impact sounds
-            this.sounds.impacts.wood = [
-                this.p.loadSound('assets/sounds/wood_impact_1.mp3'),
-                this.p.loadSound('assets/sounds/wood_impact_2.mp3')
-            ];
-            
-            // Load glass impact sounds
-            this.sounds.impacts.glass = [
-                this.p.loadSound('assets/sounds/glass_impact_1.mp3'),
-                this.p.loadSound('assets/sounds/glass_impact_2.mp3')
-            ];
-            
-            // Load soft impact sounds
-            this.sounds.impacts.soft = [
-                this.p.loadSound('assets/sounds/soft_impact_1.mp3'),
-                this.p.loadSound('assets/sounds/soft_impact_2.mp3')
-            ];
-            
-            // Load generic impact sounds (fallback)
-            this.sounds.impacts.generic = [
-                this.p.loadSound('assets/sounds/generic_impact_1.mp3'),
-                this.p.loadSound('assets/sounds/generic_impact_2.mp3')
-            ];
-            
-            // Load ambient sound (optional)
-            if (CONFIG.audio.ambientEnabled) {
-                this.sounds.ambient = this.p.loadSound('assets/sounds/ambient.mp3');
+        // Define the sound files to load
+        const soundFiles = {
+            metal: ['metal_impact_1.mp3', 'metal_impact_2.mp3', 'metal_impact_3.mp3'],
+            wood: ['wood_impact_1.mp3', 'wood_impact_2.mp3'],
+            glass: ['glass_impact_1.mp3', 'glass_impact_2.mp3', 'glass_break.mp3'],
+            soft: ['soft_impact_1.mp3', 'soft_impact_2.mp3'],
+            generic: ['generic_impact_1.mp3', 'generic_impact_2.mp3'],
+            ambient: ['ambient.mp3']
+        };
+        
+        // Create placeholder sounds first - they'll be replaced by loaded sounds if available
+        this.createPlaceholderSounds();
+        
+        // Track load failures to report once at the end rather than spamming console
+        let loadFailures = 0;
+        
+        // Helper to safely load a sound file with fallback
+        const safeLoadSound = (path) => {
+            try {
+                return this.p.loadSound(
+                    path,
+                    // Success callback - nothing needed
+                    () => {},
+                    // Error callback
+                    (err) => {
+                        loadFailures++;
+                        // Individual errors are not logged to avoid console spam
+                    }
+                );
+            } catch (err) {
+                loadFailures++;
+                return null;
             }
-        } catch (error) {
-            console.error("Error loading sounds:", error);
+        };
+        
+        // Try to load sound files for each material type
+        for (const [materialType, fileNames] of Object.entries(soundFiles)) {
+            if (materialType === 'ambient') {
+                // Handle ambient separately
+                if (CONFIG.audio.ambientEnabled) {
+                    const ambientSound = safeLoadSound('assets/sounds/' + fileNames[0]);
+                    if (ambientSound) this.sounds.ambient = ambientSound;
+                }
+                continue;
+            }
             
-            // Create placeholder sounds for development when assets might be missing
-            this.createPlaceholderSounds();
+            // Try to load each sound file for this material
+            for (const fileName of fileNames) {
+                const sound = safeLoadSound('assets/sounds/' + fileName);
+                if (sound) {
+                    this.sounds.impacts[materialType].push(sound);
+                }
+            }
+        }
+        
+        // Log summary of results
+        if (loadFailures > 0) {
+            console.warn(`Failed to load ${loadFailures} sound file(s). Using placeholder sounds.`);
         }
     }
     
@@ -116,29 +143,116 @@ class AudioSystem {
      */
     createPlaceholderSounds() {
         // Create simple placeholder sounds with oscillators
-        const createOscillator = (freq, type = 'sine') => {
+        const createOscillator = (baseFreq, type = 'sine', duration = 0.3, variationAmount = 0.1) => {
             return {
                 play: () => {
-                    const osc = new p5.Oscillator(type);
+                    // Frequency variation to make repeated sounds more natural
+                    const freqVariation = baseFreq * variationAmount * (Math.random() * 2 - 1);
+                    const freq = baseFreq + freqVariation;
+                    
+                    const osc = new this.p.Oscillator(type);
                     osc.freq(freq);
-                    osc.amp(0.2);
+                    osc.amp(0);
                     osc.start();
-                    osc.amp(0, 0.2); // Fade out over 0.2 seconds
-                    setTimeout(() => osc.stop(), 300);
+                    osc.amp(0.2, 0.01); // Quick fade in
+                    osc.amp(0, duration); // Fade out
+                    
+                    // Create a simple envelope for more realistic sound
+                    const env = new this.p.Envelope();
+                    env.setADSR(0.01, 0.1, 0.1, duration);
+                    env.setRange(0.2, 0);
+                    env.play();
+                    
+                    // Stop oscillator after sound completes
+                    setTimeout(() => osc.stop(), duration * 1000);
+                    
+                    return osc;
                 },
-                rate: (r) => {},
-                setVolume: (v) => {}
+                rate: (r) => {}, // Dummy method for compatibility
+                setVolume: (v) => {}, // Dummy method for compatibility
+                isPlaying: () => false // Dummy method for compatibility
             };
         };
         
-        // Populate placeholder sounds
-        this.sounds.impacts.metal = [createOscillator(600, 'square')];
-        this.sounds.impacts.wood = [createOscillator(300, 'triangle')];
-        this.sounds.impacts.glass = [createOscillator(900, 'sine')];
-        this.sounds.impacts.soft = [createOscillator(200, 'sine')];
-        this.sounds.impacts.generic = [createOscillator(400, 'triangle')];
+        // Create more realistic placeholder sounds for each material
         
-        console.warn("Created placeholder sounds. Replace with actual audio files.");
+        // Metal: Higher pitch, metallic timbre
+        this.sounds.impacts.metal = [
+            createOscillator(600, 'square', 0.4, 0.05),  // Higher, cleaner sound
+            createOscillator(500, 'triangle', 0.5, 0.05) // Slightly lower variation
+        ];
+        
+        // Wood: Medium pitch, woody timbre
+        this.sounds.impacts.wood = [
+            createOscillator(300, 'triangle', 0.3, 0.1),
+            createOscillator(250, 'triangle', 0.35, 0.1)
+        ];
+        
+        // Glass: Very high pitch, pure tones
+        this.sounds.impacts.glass = [
+            createOscillator(800, 'sine', 0.3, 0.2), // Pure tone for gentle impact
+            createOscillator(1200, 'sawtooth', 0.2, 0.3) // Harsher tone for breaking
+        ];
+        
+        // Soft: Low pitch, gentle sound
+        this.sounds.impacts.soft = [
+            createOscillator(150, 'sine', 0.5, 0.1),
+            createOscillator(180, 'sine', 0.6, 0.1)
+        ];
+        
+        // Generic: Medium pitch, basic sound
+        this.sounds.impacts.generic = [
+            createOscillator(400, 'triangle', 0.3, 0.1),
+            createOscillator(350, 'triangle', 0.4, 0.1)
+        ];
+        
+        // Create ambient sound if needed
+        if (!this.sounds.ambient && CONFIG.audio.ambientEnabled) {
+            // Create a more complex ambient sound using multiple oscillators
+            this.sounds.ambient = {
+                oscillators: [],
+                play: () => {
+                    // Clear any previous oscillators
+                    this.stopAmbient();
+                    this.sounds.ambient.oscillators = [];
+                    
+                    // Create 3 oscillators with different frequencies for a richer ambient sound
+                    const createAmbientOsc = (freq, type, amp) => {
+                        const osc = new this.p.Oscillator(type);
+                        osc.freq(freq);
+                        osc.amp(amp * CONFIG.audio.ambientVolume);
+                        osc.start();
+                        return osc;
+                    };
+                    
+                    // Add some oscillators for ambient sound
+                    this.sounds.ambient.oscillators.push(
+                        createAmbientOsc(60, 'sine', 0.1),   // Low drone
+                        createAmbientOsc(67, 'sine', 0.07),  // Harmonic
+                        createAmbientOsc(120, 'sine', 0.05)  // Higher harmonic
+                    );
+                },
+                loop: function() { this.play(); },
+                stop: function() {
+                    if (this.oscillators) {
+                        this.oscillators.forEach(osc => {
+                            osc.amp(0, 1); // Fade out
+                            setTimeout(() => osc.stop(), 1100);
+                        });
+                    }
+                },
+                isPlaying: function() {
+                    return this.oscillators && this.oscillators.length > 0;
+                },
+                setVolume: function(vol) {
+                    if (this.oscillators) {
+                        this.oscillators.forEach(osc => {
+                            osc.amp(vol, 0.5); // Smooth transition
+                        });
+                    }
+                }
+            };
+        }
     }
     
     /**

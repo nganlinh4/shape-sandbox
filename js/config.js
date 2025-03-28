@@ -14,6 +14,8 @@ const CONFIG = {
         shadowSoftness: 16.0,    // Soft shadow parameter
         maxBounces: 3,           // Maximum reflection/refraction bounces
         defaultBackground: [0.1, 0.12, 0.15], // Default background color (dark blue-gray)
+        envMapIntensity: 1.0,    // Environment map contribution intensity
+        reflectionQuality: 0.5,  // Quality of reflections (0-1)
         postProcess: {
             enabled: true,
             bloom: true,

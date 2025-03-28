@@ -50,7 +50,14 @@ class UIManager {
                     CONFIG.render.defaultBackground[1] * 255,
                     CONFIG.render.defaultBackground[2] * 255
                 ],
-                showFPS: CONFIG.ui.fps.show
+                showFPS: CONFIG.ui.fps.show,
+                postProcess: CONFIG.render.postProcess,
+                bloomEnabled: CONFIG.render.bloomEnabled,
+                bloomThreshold: CONFIG.render.bloomThreshold,
+                bloomIntensity: CONFIG.render.bloomIntensity,
+                envMapEnabled: CONFIG.render.envMapEnabled,
+                envMapIntensity: CONFIG.render.envMapIntensity,
+                reflectionQuality: CONFIG.render.reflectionQuality
             },
             
             // Lighting
@@ -272,7 +279,92 @@ class UIManager {
      * @param {TweakpaneTab} tab - The tab to add controls to
      */
     setupRenderingControls(tab) {
+        // Post-processing section
+        tab.addSeparator();
+        tab.addInput(this.params.render, 'postProcess', {
+            label: 'Post-Processing'
+        }).on('change', (ev) => {
+            this.renderer.setPostProcessingParams(
+                ev.value,
+                this.params.render.bloomEnabled,
+                this.params.render.bloomThreshold,
+                this.params.render.bloomIntensity
+            );
+        });
+        
+        // Bloom controls folder
+        const bloomFolder = tab.addFolder({ title: 'Bloom Effect' });
+        
+        bloomFolder.addInput(this.params.render, 'bloomEnabled', {
+            label: 'Enabled'
+        }).on('change', (ev) => {
+            this.renderer.setPostProcessingParams(
+                this.params.render.postProcess,
+                ev.value,
+                this.params.render.bloomThreshold,
+                this.params.render.bloomIntensity
+            );
+        });
+        
+        bloomFolder.addInput(this.params.render, 'bloomThreshold', {
+            label: 'Threshold',
+            min: 0.1,
+            max: 1.0,
+            step: 0.05
+        }).on('change', (ev) => {
+            this.renderer.setPostProcessingParams(
+                this.params.render.postProcess,
+                this.params.render.bloomEnabled,
+                ev.value,
+                this.params.render.bloomIntensity
+            );
+        });
+        
+        bloomFolder.addInput(this.params.render, 'bloomIntensity', {
+            label: 'Intensity',
+            min: 0.1,
+            max: 2.0,
+            step: 0.05
+        }).on('change', (ev) => {
+            this.renderer.setPostProcessingParams(
+                this.params.render.postProcess,
+                this.params.render.bloomEnabled,
+                this.params.render.bloomThreshold,
+                ev.value
+            );
+        });
+        
+        // Environment mapping controls
+        tab.addSeparator();
+        const envMapFolder = tab.addFolder({ title: 'Environment Map' });
+        
+        envMapFolder.addInput(this.params.render, 'envMapEnabled', {
+            label: 'Enabled'
+        }).on('change', (ev) => {
+            CONFIG.render.envMapEnabled = ev.value;
+        });
+        
+        envMapFolder.addInput(this.params.render, 'envMapIntensity', {
+            label: 'Intensity',
+            min: 0.0,
+            max: 2.0,
+            step: 0.1
+        }).on('change', (ev) => {
+            CONFIG.render.envMapIntensity = ev.value;
+        });
+        
+        // Reflections quality
+        envMapFolder.addInput(this.params.render, 'reflectionQuality', {
+            label: 'Reflection Quality',
+            min: 0.0,
+            max: 1.0,
+            step: 0.1
+        }).on('change', (ev) => {
+            CONFIG.render.reflectionQuality = ev.value;
+        });
+        
         // Shadows enabled toggle
+        tab.addSeparator();
         tab.addInput(this.params.render, 'shadows', {
             label: 'Shadows'
         });

@@ -160,6 +160,11 @@ function windowResized() {
     // Update config
     CONFIG.render.width = windowWidth;
     CONFIG.render.height = windowHeight;
+    
+    // Update renderer (which handles post-processing buffers)
+    if (renderer) {
+        renderer.handleWindowResize();
+    }
 }
 
 /**
