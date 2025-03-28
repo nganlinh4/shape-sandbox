@@ -183,7 +183,7 @@ class UIManager {
         tab.addButton({
             title: 'Add Shape',
             label: 'Create'
-        }).on('click', function() {
+        }).on('click', () => { // Use arrow function to preserve 'this' context
             try {
                 // Create shape at a random position above the ground
                 const x = (Math.random() - 0.5) * 10;
@@ -211,12 +211,18 @@ class UIManager {
                 
                 console.log("Using position object:", position);
                 
+                // --- DEBUG LOGGING ---
+                console.log("Inside click handler, 'this':", this);
+                console.log("Inside click handler, 'this.p':", this.p);
+                console.log("Inside click handler, typeof this.p?.createVector:", typeof this.p?.createVector);
+                // --- END DEBUG LOGGING ---
                 // Call interaction handler to create shape
-                self.interaction.spawnShape(
-                    self.params.shape.type,
+                this.interaction.spawnShape(
+ // Use 'this' directly
+                    this.params.shape.type,
                     position,
-                    self.params.shape.size,
-                    self.params.shape.material
+                    this.params.shape.size,
+                    this.params.shape.material
                 );
                 console.log("Shape spawned successfully");
             } catch (err) {

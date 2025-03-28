@@ -85,7 +85,7 @@ function createInitialScene(p) {
         position: p.createVector(0, 0, 0),
         materialId: materialLibrary.getMaterial(0).id, // Default material
         mass: 0 // Static
-    });
+    }, p); // Pass the p5 instance
     shapeManager.addShape(groundPlane);
     physics.addShape(groundPlane);
     

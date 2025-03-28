@@ -184,7 +184,7 @@ class InteractionHandler {
             position: finalPosition,
             size: size || CONFIG.shapes.defaultSize,
             materialId: materialId || 0
-        });
+        }, this.p); // Pass the p5 instance
         
         // Add to shape manager
         this.shapeManager.addShape(shape);

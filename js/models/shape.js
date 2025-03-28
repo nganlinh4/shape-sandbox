@@ -14,11 +14,16 @@ class Shape {
      * @param {number} options.materialId - ID of the material to use
      * @param {number} options.mass - Physics mass (0 = static)
      */
-    constructor(options = {}) {
+    constructor(options = {}, p) { // Added p parameter
+        if (!p || typeof p.createVector !== 'function') {
+            throw new Error("Shape constructor requires a valid p5 instance ('p') as the second argument.");
+        }
+        this.p = p; // Store p5 instance
         // Core properties
         this.id = options.id || 0;
         this.type = options.type !== undefined ? options.type : 0; // Sphere by default
-        this.position = options.position || createVector(0, 0, 0);
+        this.position = options.position || this.p.createVector(0, 0, 0);
+ // Use p.createVector
         this.orientation = options.orientation || [0, 0, 0, 1]; // Identity quaternion
         this.size = options.size || CONFIG.shapes.defaultSize;
         this.materialId = options.materialId !== undefined ? options.materialId : 0;
@@ -65,6 +70,7 @@ class Shape {
     clone(overrides = {}) {
         // Create a new instance with copied properties
         const newShape = new Shape({
+ // Pass p to the cloned shape's constructor
             id: overrides.id !== undefined ? overrides.id : this.id,
             type: overrides.type !== undefined ? overrides.type : this.type,
             position: overrides.position || this.position.copy(),
@@ -74,7 +80,7 @@ class Shape {
             mass: overrides.mass !== undefined ? overrides.mass : this.mass,
             friction: overrides.friction !== undefined ? overrides.friction : this.friction,
             restitution: overrides.restitution !== undefined ? overrides.restitution : this.restitution
-        });
+        }, this.p); // Pass the stored p5 instance
         
         return newShape;
     }
