@@ -25,18 +25,37 @@
     </style>
 </head>
 <body>
+    <div id="sketch-holder"></div>
     <div class="ui-container" id="ui-container"></div>
     
     <!-- Libraries -->
+    <!-- Use p5.js v1.4.0 which has better compatibility with p5.sound -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/addons/p5.sound.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"></script>
+    
+    <!-- Add a small delay before loading p5.sound to ensure p5 is fully initialized -->
+    <script>
+        // Make sure p5.js is fully loaded before loading p5.sound
+        window.addEventListener('load', function() {
+            // Create script element for p5.sound
+            const soundScript = document.createElement('script');
+            soundScript.src = "https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/addons/p5.sound.min.js";
+            document.body.appendChild(soundScript);
+        });
+    </script>
+    
     <script src="https://cdn.jsdelivr.net/npm/tweakpane@3.1.0/dist/tweakpane.min.js"></script>
+    
+    <!-- Import cannon-es as a module -->
+    <script type="module">
+        import * as CANNON from 'https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js';
+        window.CANNON = CANNON; // Make CANNON available globally
+    </script>
     
     <!-- Core files -->
     <script src="js/config.js"></script>
     <script src="js/utils/math-utils.js"></script>
     <script src="js/utils/data-texture.js"></script>
+    <script src="js/utils/texture-manager.js"></script>
     
     <!-- Shader files -->
     <script src="js/shaders/sdf-functions.js"></script>

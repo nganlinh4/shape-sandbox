@@ -174,9 +174,9 @@ class Renderer {
         const size = 256; // Increased size for better quality
         
         // Create cubemap texture for environment mapping
+        // Use regular 2D graphics instead of WebGL graphics for better compatibility
         this.environmentMap = {
-            // Create 6 faces of the cube map with better quality
-            faces: Array(6).fill().map(() => p.createGraphics(size, size, p.WEBGL))
+            faces: Array(6).fill().map(() => p.createGraphics(size, size))
         };
         
         // Generate a richer environment with gradients, "sky", and "ground"
@@ -196,13 +196,14 @@ class Renderer {
     generateEnvironmentMapFaces() {
         // Generate a richer environment with sky, ground, and directional lighting
         const faces = this.environmentMap.faces;
+        const p = this.p;
         
         // Define colors for the environment
         const skyColors = {
             top: [0.4, 0.65, 1.0],      // Sky blue
             horizon: [0.8, 0.9, 1.0],    // Horizon light blue
             ground: [0.3, 0.25, 0.2],    // Ground/earth brown
-            sunDirection: [-0.5, 0.5, -0.7], // Direction of the sun (should match main light)
+            sunDirection: [-0.5, 0.5, -0.7], // Direction of the sun
             sunColor: [1.0, 0.9, 0.7],   // Warm sun color
             sunIntensity: 2.0,           // Sun brightness
             sunSize: 0.03                // Angular size of the sun
@@ -277,40 +278,42 @@ class Renderer {
                 color = add(color, scale(skyColors.sunColor, sunFactor * skyColors.sunIntensity));
             }
             
-            return color;
+            // Convert to 0-255 range for p5 color
+            return [color[0] * 255, color[1] * 255, color[2] * 255];
         };
         
-        // Draw each face
+        // Draw each face using standard 2D drawing functions
         faces.forEach((face, i) => {
+            face.background(0);
             face.noStroke();
             
-            // Draw the environment map with high-quality gradients
-            face.loadPixels();
-            const d = face.pixelDensity();
-            const faceSize = face.width * d;
+            // Resolution for the grid of rectangles we'll draw
+            const resolution = 16; // Adjust for performance vs. quality
+            const cellSize = face.width / resolution;
             
-            for (let x = 0; x < faceSize; x++) {
-                for (let y = 0; y < faceSize; y++) {
-                    // Convert pixel coordinates to UV [0,1]
-                    const u = x / faceSize;
-                    const v = y / faceSize;
+            // Draw a grid of rectangles with different colors
+            for (let x = 0; x < resolution; x++) {
+                for (let y = 0; y < resolution; y++) {
+                    // Calculate UV coordinates for the center of this cell
+                    const u = (x + 0.5) / resolution;
+                    const v = (y + 0.5) / resolution;
                     
-                    // Convert UV to direction vector based on cube face
+                    // Get direction vector for this pixel
                     const dir = faceDirToVector(i, u, v);
                     
                     // Get color for this direction
                     const color = getEnvironmentColor(dir);
                     
-                    // Set pixel color
-                    const idx = 4 * (y * faceSize + x);
-                    face.pixels[idx] = color[0] * 255;
-                    face.pixels[idx+1] = color[1] * 255;
-                    face.pixels[idx+2] = color[2] * 255;
-                    face.pixels[idx+3] = 255;
+                    // Draw rectangle with this color
+                    face.fill(color[0], color[1], color[2]);
+                    face.rect(
+                        x * cellSize, 
+                        y * cellSize, 
+                        cellSize, 
+                        cellSize
+                    );
                 }
             }
-            
-            face.updatePixels();
         });
     }
     
@@ -327,14 +330,14 @@ class Renderer {
         const texture = gl.createTexture();
         gl.bindTexture(gl.TEXTURE_CUBE_MAP, texture);
         
-        // Set texture parameters
-        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+        // Set texture parameters - only use parameters guaranteed to work in all WebGL versions
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
+        // Note: We're deliberately not using TEXTURE_WRAP_R as it's not in WebGL 1.0
         
-        // Upload each face
+        // Upload each face using the most compatible approach
         const targets = [
             gl.TEXTURE_CUBE_MAP_POSITIVE_X,
             gl.TEXTURE_CUBE_MAP_NEGATIVE_X,
@@ -344,17 +347,40 @@ class Renderer {
             gl.TEXTURE_CUBE_MAP_NEGATIVE_Z
         ];
         
+        // Create temporary canvas for transferring pixel data if needed
+        const tempCanvas = document.createElement('canvas');
+        const tempCtx = tempCanvas.getContext('2d');
+        
         faces.forEach((face, i) => {
-            const target = targets[i];
-            gl.texImage2D(
-                target, 0, gl.RGBA, 
-                face.width, face.height, 0,
-                gl.RGBA, gl.UNSIGNED_BYTE, face.canvas
-            );
+            try {
+                // First attempt: direct passing of canvas element (works in most browsers)
+                gl.texImage2D(
+                    targets[i],
+                    0,
+                    gl.RGBA,
+                    gl.RGBA,
+                    gl.UNSIGNED_BYTE,
+                    face.elt
+                );
+            } catch (e) {
+                console.warn("Direct canvas upload failed, using fallback method");
+                
+                // Fallback: Copy to temp canvas then upload
+                tempCanvas.width = face.width;
+                tempCanvas.height = face.height;
+                tempCtx.drawImage(face.elt, 0, 0);
+                
+                gl.texImage2D(
+                    targets[i],
+                    0,
+                    gl.RGBA,
+                    gl.RGBA,
+                    gl.UNSIGNED_BYTE,
+                    tempCanvas
+                );
+            }
         });
         
-        // Generate mipmaps
-        gl.generateMipmap(gl.TEXTURE_CUBE_MAP);
         gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
         
         return texture;

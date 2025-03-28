@@ -58,9 +58,16 @@ function initializeSystems() {
         materialLibrary
     );
     
-    // Create interaction handler
+    // Create interaction handler - Pass the p5 instance correctly
+    const p5Instance = {
+        createVector: createVector,
+        mouseX: mouseX,
+        mouseY: mouseY,
+        Vector: p5.Vector
+    };
+    
     interaction = new InteractionHandler(
-        window,
+        p5Instance, 
         shapeManager,
         physics
     );
@@ -193,26 +200,38 @@ function draw() {
  * Handle mouse pressed event
  */
 function mousePressed(event) {
-    return interaction.mousePress(event);
+    if (interaction && typeof interaction.mousePress === 'function') {
+        return interaction.mousePress(event);
+    }
+    return true;
 }
 
 /**
  * Handle mouse dragged event
  */
 function mouseDragged(event) {
-    return interaction.mouseMove(event);
+    if (interaction && typeof interaction.mouseMove === 'function') {
+        return interaction.mouseMove(event);
+    }
+    return true;
 }
 
 /**
  * Handle mouse released event
  */
 function mouseReleased(event) {
-    return interaction.mouseRelease(event);
+    if (interaction && typeof interaction.mouseRelease === 'function') {
+        return interaction.mouseRelease(event);
+    }
+    return true;
 }
 
 /**
  * Handle key press events
  */
 function keyPressed(event) {
-    return interaction.keyPress(event);
+    if (interaction && typeof interaction.keyPress === 'function') {
+        return interaction.keyPress(event);
+    }
+    return true;
 }
