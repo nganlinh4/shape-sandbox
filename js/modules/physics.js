@@ -6,9 +6,11 @@ class PhysicsSystem {
     /**
      * Create a new physics system
      * @param {ShapeManager} shapeManager - The shape manager instance
+     * @param {Renderer} renderer - The renderer instance
      */
-    constructor(shapeManager) {
+    constructor(shapeManager, renderer) {
         this.shapeManager = shapeManager;
+        this.renderer = renderer; // Store renderer instance
         this.world = null;
         this.bodies = new Map(); // Map shape IDs to physics bodies
         
@@ -242,8 +244,40 @@ class PhysicsSystem {
         const p = p5instance;
         
         try {
-            // SIMPLE APPROACH: Use a basic raycasting technique that doesn't depend on p5's view matrix
+            // console.log(`Calculating ray for screenPos: (${screenPos.x.toFixed(2)}, ${screenPos.y.toFixed(2)})`); // DEBUG
+            // --- CRITICAL FIX: Use p5's built-in method if available ---
+            // p5.js provides a better ray calculation in 3D mode
+            if (p._renderer && typeof p._renderer.unproject === 'function') {
+                // console.log("Using p._renderer.unproject method."); // DEBUG
+                // Get near and far points on the ray using p5's unproject
+                const nearPoint = p._renderer.unproject(screenPos.x, p.height - screenPos.y, 0.1);
+                const farPoint = p._renderer.unproject(screenPos.x, p.height - screenPos.y, 1.0);
+                // console.log(`Near: (${nearPoint.x.toFixed(2)}, ${nearPoint.y.toFixed(2)}, ${nearPoint.z.toFixed(2)}), Far: (${farPoint.x.toFixed(2)}, ${farPoint.y.toFixed(2)}, ${farPoint.z.toFixed(2)})`); // DEBUG
+                
+                // Calculate the ray direction from near to far
+                const rayDir = p5.Vector.sub(farPoint, nearPoint).normalize();
+                
+                return {
+                    origin: new CANNON.Vec3(nearPoint.x, nearPoint.y, nearPoint.z),
+                    direction: new CANNON.Vec3(rayDir.x, rayDir.y, rayDir.z)
+                };
+            }
             
+            // Otherwise use our custom calculation
+            // console.log("Using custom ray calculation fallback."); // DEBUG
+            let camPos;
+            if (this.renderer && this.renderer.cameraPos) {
+ // Use this.renderer
+                camPos = this.renderer.cameraPos;
+            } else {
+                // Fallback to default camera position if renderer is not available
+                camPos = p.createVector(
+                    CONFIG.camera.defaultPosition[0],
+                    CONFIG.camera.defaultPosition[1], 
+                    CONFIG.camera.defaultPosition[2]
+                );
+            }
+
             // Create an alternate camera setup that matches our expected configuration
             const fov = CONFIG.camera.fov * Math.PI / 180; // Convert to radians
             const aspect = p.width / p.height;
@@ -252,10 +286,6 @@ class PhysicsSystem {
             const ndcX = (screenPos.x / p.width) * 2 - 1;
             const ndcY = ((p.height - screenPos.y) / p.height) * 2 - 1; // Flip Y
             
-            // Determine camera position based on CONFIG or use a reasonable default
-            // Most typical setup is a camera positioned back on Z axis looking at origin
-            const camPos = p.createVector(0, 2, 10); // Simple default
-            
             // Generate ray direction
             const rayDir = p.createVector(
                 ndcX * Math.tan(fov / 2) * aspect,
@@ -263,9 +293,39 @@ class PhysicsSystem {
                 -1  // Forward along -Z axis
             ).normalize();
             
+            // Transform the ray direction by the camera's orientation
+            let finalOrigin = new CANNON.Vec3(camPos.x, camPos.y, camPos.z);
+            let finalDirection = new CANNON.Vec3(rayDir.x, rayDir.y, rayDir.z); // Default if transform fails
+
+            if (this.renderer && this.renderer.viewMatrix) {
+ // Use this.renderer
+                try {
+                    // Create a direction vector in view space
+                    const viewInv = this.renderer.viewMatrix.copy().invert(); // Use this.renderer
+                    
+                    // Extract rotation from view matrix (upper 3x3 part)
+                    // and apply it to the ray direction
+                    const m = viewInv.mat4;
+                    const rotatedRayDir = p.createVector(
+                        rayDir.x * m[0] + rayDir.y * m[4] + rayDir.z * m[8],
+                        rayDir.x * m[1] + rayDir.y * m[5] + rayDir.z * m[9],
+                        rayDir.x * m[2] + rayDir.y * m[6] + rayDir.z * m[10]
+                    ).normalize();
+                    
+                    finalDirection.set(rotatedRayDir.x, rotatedRayDir.y, rotatedRayDir.z)
+;
+                    // console.log("Successfully transformed ray direction using view matrix."); // DEBUG
+
+                } catch (err) {
+                    console.warn("Error transforming ray with view matrix:", err);
+                }
+            }
+            
+            // Simplified fallback if we can't use the view matrix
+            // console.log(`Final Ray - Origin: (${finalOrigin.x.toFixed(2)}, ${finalOrigin.y.toFixed(2)}, ${finalOrigin.z.toFixed(2)}), Direction: (${finalDirection.x.toFixed(2)}, ${finalDirection.y.toFixed(2)}, ${finalDirection.z.toFixed(2)})`); // DEBUG
             return {
-                origin: new CANNON.Vec3(camPos.x, camPos.y, camPos.z),
-                direction: new CANNON.Vec3(rayDir.x, rayDir.y, rayDir.z)
+                origin: finalOrigin,
+                direction: finalDirection
             };
         } catch (err) {
             // If anything fails, return a simple default ray pointing forward
@@ -300,7 +360,7 @@ class PhysicsSystem {
             // Perform ray intersection test
             const result = new CANNON.RaycastResult();
             const rayEnd = new CANNON.Vec3().copy(this.mouseRay.origin).addScaledVector(
-                this.dragDistance * 10,
+                1000, // Use a large distance for the ray end
                 this.mouseRay.direction
             );
             
@@ -314,8 +374,15 @@ class PhysicsSystem {
                 result
             );
             
+            // console.log(`Raycast from (${this.mouseRay.origin.x.toFixed(2)}, ${this.mouseRay.origin.y.toFixed(2)}, ${this.mouseRay.origin.z.toFixed(2)}) dir (${this.mouseRay.direction.x.toFixed(2)}, ${this.mouseRay.direction.y.toFixed(2)}, ${this.mouseRay.direction.z.toFixed(2)})`); // DEBUG
+
             // If no hit or hit a static body, return null
-            if (!result.hasHit || result.body.mass === 0) return null;
+            if (!result.hasHit || result.body.mass === 0) {
+                // console.log("Raycast did not hit a dynamic body."); // DEBUG
+                return null;
+            }
+
+            // console.log(`Raycast hit body ID: ${result.body.id}, mass: ${result.body.mass}, distance: ${result.distance.toFixed(2)}`); // DEBUG
             
             // Get the hit body
             this.draggedBody = result.body;
@@ -380,8 +447,8 @@ class PhysicsSystem {
             );
             
             // Update constraint target position
-            this.dragConstraint.pivotA.copy(this.dragPoint);
             this.dragConstraint.bodyB.position.copy(targetPos);
+            this.dragConstraint.update(); // Explicitly update constraint
         } catch (err) {
             console.error("Error in updateDrag:", err);
         }

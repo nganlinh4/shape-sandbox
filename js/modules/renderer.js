@@ -565,6 +565,9 @@ class Renderer {
             return; // Skip the rest of the method in fallback mode
         }
         
+        // DO NOT apply orbit controls here - they are now handled in main.js
+        // This prevents the duplicate application of orbit controls
+        
         // Standard path for non-fallback mode
         // Get camera info from p5's camera system
         const renderer = this.p._renderer;
@@ -572,22 +575,14 @@ class Renderer {
         // Check if renderer and matrices are initialized
         if (!renderer) {
             console.warn("p5 renderer not available for updateCameraMatrices.");
-            
-            // Initialize default matrices
-            if (!this.viewMatrix) this.viewMatrix = new p5.Matrix();
-            if (!this.projectionMatrix) this.projectionMatrix = new p5.Matrix();
-            return;
+            return; // Keep existing camera matrices and position
         }
         
         // Check specifically for matrices availability
         const matricesAvailable = renderer.uViewMatrix && renderer.uProjMatrix;
         if (!matricesAvailable) {
-            console.warn("Camera matrices not available yet, using identity matrices");
-            
-            // Use identity matrices as fallback during initialization
-            if (!this.viewMatrix) this.viewMatrix = new p5.Matrix();
-            if (!this.projectionMatrix) this.projectionMatrix = new p5.Matrix();
-            return;
+            console.warn("Camera matrices not available yet");
+            return; // Keep existing camera matrices and position
         }
 
         // Get view matrix (camera transformation)
@@ -597,31 +592,17 @@ class Renderer {
         // Get projection matrix
         this.projectionMatrix = renderer.uProjMatrix.copy();
 
-        // Get camera position
-        if (CONFIG.camera.orbitControl && typeof p.orbitControl === 'function' && this.viewMatrix) {
-            // When using orbitControl, extract camera position from the inverted view matrix
-            try {
-                const viewInv = this.viewMatrix.copy().invert();
-                this.cameraPos = p.createVector(
-                    viewInv.mat4[12],
-                    viewInv.mat4[13],
-                    viewInv.mat4[14]
-                );
-            } catch (e) {
-                console.warn("Error inverting view matrix for camera position, using default position");
-                // Keep previous position or use default if needed
-                if (!this.cameraPos) {
-                    this.cameraPos = p.createVector(
-                        CONFIG.camera.defaultPosition[0],
-                        CONFIG.camera.defaultPosition[1],
-                        CONFIG.camera.defaultPosition[2]
-                    );
-                }
-            }
-        } else if (renderer.camera) {
-            // Fallback: Try to get from internal p5 camera if not using orbit control
-            const cam = renderer.camera;
-            this.cameraPos = p.createVector(cam.eyeX, cam.eyeY, cam.eyeZ);
+        // Get camera position from the inverted view matrix
+        try {
+            const viewInv = this.viewMatrix.copy().invert();
+            this.cameraPos = p.createVector(
+                viewInv.mat4[12],
+                viewInv.mat4[13],
+                viewInv.mat4[14]
+            );
+        } catch (e) {
+            console.warn("Error inverting view matrix for camera position");
+            // Keep the existing camera position (don't reset to default)
         }
     }
 

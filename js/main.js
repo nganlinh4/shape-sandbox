@@ -13,6 +13,7 @@ let audio;
 let ui;
 let lastFrameTime = 0;
 let defaultFont; // Global font variable
+let orbitControlsEnabled = true; // Define camera controls variable to manage its state
 
 /**
  * Initialize all systems and modules
@@ -34,10 +35,7 @@ function initializeSystems(p) {
         // Create shape manager
         shapeManager = new ShapeManager();
         
-        // Create physics system
-        physics = new PhysicsSystem(shapeManager);
-        
-        // Create renderer
+        // Create renderer (BEFORE physics)
         try {
             renderer = new Renderer(p, shapeManager, materialLibrary);
         } catch (err) {
@@ -54,6 +52,9 @@ function initializeSystems(p) {
                 loadDefaultTextures: function() {}
             };
         }
+        // Create physics system (AFTER renderer)
+        physics = new PhysicsSystem(shapeManager, renderer); // Pass renderer
+
         
         // Create interaction handler
         interaction = new InteractionHandler(p, shapeManager, physics);
@@ -242,24 +243,8 @@ const sketch = (p) => {
             console.error("Error creating canvas:", e);
         }
 
-        // Enable orbit controls for camera
-        try {
-            if (CONFIG.camera.orbitControl) {
-                console.log("Setting up orbit controls...");
-                // Check if orbitControl is available globally or on p
-                if (typeof orbitControl === 'function') {
-                    console.log("Using global orbitControl");
-                    orbitControl(); // Try global first
-                } else if (typeof p.orbitControl === 'function') {
-                    console.log("Using p.orbitControl");
-                    p.orbitControl(); // Try instance method
-                } else {
-                    console.warn("orbitControl function not found. Camera controls may not work.");
-                }
-            }
-        } catch (e) {
-            console.error("Error setting up orbit controls:", e);
-        }
+        // DO NOT enable orbit controls here anymore - we'll call it in the draw function
+        // This prevents initialization issues that can cause the camera to be locked
 
         // Initialize systems, passing the p5 instance
         try {
@@ -306,6 +291,11 @@ const sketch = (p) => {
         
         // Clear background with a specific color so we can see if basic rendering works
         p.background(20, 20, 30); // Dark blue-ish background
+        
+        // Apply orbit controls EVERY FRAME if enabled - this is critical for them to work properly
+        if (CONFIG.camera.orbitControl && orbitControlsEnabled && typeof p.orbitControl === 'function') {
+            p.orbitControl();
+        }
         
         // Add a simple reference shape if we don't have other rendering
         let renderSuccess = false;
@@ -357,35 +347,40 @@ const sketch = (p) => {
      * Handle mouse pressed event
      */
     p.mousePressed = (event) => {
-    // Attempt to initialize audio on first user interaction
-    if (audio && typeof audio.init === 'function' && !audio.isInitialized) {
-        try {
-            // p5 implicitly handles userStartAudio on interaction if context is suspended
-            audio.init(); 
-        } catch (err) {
-            console.error("Failed to initialize AudioSystem:", err);
-            if (audio) audio.isEnabled = false; // Ensure audio is marked as disabled
+        // Attempt to initialize audio on first user interaction
+        if (audio && typeof audio.init === 'function' && !audio.isInitialized) {
+            try {
+                // p5 implicitly handles userStartAudio on interaction if context is suspended
+                audio.init(); 
+            } catch (err) {
+                console.error("Failed to initialize AudioSystem:", err);
+                if (audio) audio.isEnabled = false; // Ensure audio is marked as disabled
+            }
         }
-    }
 
-        // Pass event and potentially p instance if needed by interaction handler
+        // Pass event to interaction handler
         if (interaction && typeof interaction.mousePress === 'function') {
-            // interaction.mousePress might need adjustment to accept p if it uses p5 functions directly
-            return interaction.mousePress(event);
-       } 
-        return true;
-        // Prevent default browser behavior
+            // Only prevent default behavior if the interaction handler returns true
+            const handled = interaction.mousePress(event);
+            if (handled) {
+                return false; // Prevent default only if interaction handled it
+            }
+        } 
+        return true; // Allow default behavior (including orbit controls)
     };
 
     /**    
- * Handle mouse dragged event
+     * Handle mouse dragged event
      */
     p.mouseDragged = (event) => {
         if (interaction && typeof interaction.mouseMove === 'function') {
-            // interaction.mouseMove might need adjustment
-            return interaction.mouseMove(event);
+            // Only prevent default if the interaction handler returns true
+            const handled = interaction.mouseMove(event);
+            if (handled) {
+                return false; // Prevent default only if interaction handled it
+            }
         }
-        return true;
+        return true; // Allow default behavior (including orbit controls)
     };
 
     /**
@@ -393,14 +388,17 @@ const sketch = (p) => {
      */
     p.mouseReleased = (event) => {
         if (interaction && typeof interaction.mouseRelease === 'function') {
-            // interaction.mouseRelease might need adjustment
-            return interaction.mouseRelease(event);
+            // Only prevent default if the interaction handler returns true
+            const handled = interaction.mouseRelease(event);
+            if (handled) {
+                return false; // Prevent default only if interaction handled it
+            }
         }
-        return true;
+        return true; // Allow default behavior (including orbit controls)
     };
 
     /**    
- * Handle key press events
+     * Handle key press events
      */
     p.keyPressed = (event) => {
         if (interaction && typeof interaction.keyPress === 'function') {

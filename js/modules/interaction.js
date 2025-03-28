@@ -45,8 +45,13 @@ class InteractionHandler {
         this.mouseDragHistory = [];
         this.lastDragTime = performance.now();
         
-        // Attempt to start dragging a shape
-        if (!event.altKey && !event.ctrlKey) { // Allow normal orbit controls with modifier keys
+        // Only attempt to start dragging if:
+        // 1. Left mouse button is pressed (primary button, button=0)
+        // 2. No modifiers are pressed (to leave alt/ctrl for camera controls)
+        const isLeftClick = event.button === 0;
+        const noModifiers = !event.altKey && !event.ctrlKey && !event.shiftKey && !event.metaKey;
+        
+        if (isLeftClick && noModifiers) {
             this.draggedShape = this.physics.startDrag(this.mousePos, this.p);
             this.isDragging = this.draggedShape !== null;
             
@@ -54,10 +59,11 @@ class InteractionHandler {
             if (this.draggedShape) {
                 this.selectedShape = this.draggedShape;
                 this.shapeManager.selectShape(this.draggedShape.id);
+                return true; // Only prevent default behavior if we actually grabbed a shape
             }
         }
         
-        return !this.isDragging; // Return true to prevent default if we're dragging
+        return false; // Don't prevent default handling - let orbit controls work
     }
     
     /**
