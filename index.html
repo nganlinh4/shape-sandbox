@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Material Flux - p5.js WebGL Shape Sandbox</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+        }
+        canvas {
+            display: block;
+        }
+        .ui-container {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: white;
+            font-family: Arial, sans-serif;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div class="ui-container" id="ui-container"></div>
+    
+    <!-- Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/addons/p5.sound.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tweakpane@3.1.0/dist/tweakpane.min.js"></script>
+    
+    <!-- Core files -->
+    <script src="js/config.js"></script>
+    <script src="js/utils/math-utils.js"></script>
+    <script src="js/utils/data-texture.js"></script>
+    
+    <!-- Shader files -->
+    <script src="js/shaders/sdf-functions.js"></script>
+    <script src="js/shaders/lighting.js"></script>
+    <script src="js/shaders/vertex-shader.js"></script>
+    <script src="js/shaders/fragment-shader.js"></script>
+    
+    <!-- Core modules -->
+    <script src="js/models/material.js"></script>
+    <script src="js/models/shape.js"></script>
+    <script src="js/modules/renderer.js"></script>
+    <script src="js/modules/physics.js"></script>
+    <script src="js/modules/interaction.js"></script>
+    <script src="js/modules/audio-system.js"></script>
+    <script src="js/modules/ui.js"></script>
+    
+    <!-- Main file -->
+    <script src="js/main.js"></script>
+</body>
+</html>
